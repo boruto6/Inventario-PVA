@@ -134,4 +134,21 @@ if not df.empty:
             n_nom = st.text_input("Corregir Nombre", value=df.at[idx, 'Nombre/Codigo'])
             # Se asegura que la fecha se lea bien para editarla
             val_venc = df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now()
-            n_venc = st.date_input("
+            n_venc = st.date_input("Corregir Vencimiento", value=val_venc, format="DD/MM/YYYY")
+            
+            if st.button("Aplicar Corrección"):
+                df.at[idx, 'Nombre/Codigo'] = n_nom
+                df.at[idx, 'Vencimiento'] = n_venc
+                df_save = df.copy()
+                df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
+                df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
+                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
+                st.success("¡Corregido!")
+                st.rerun()
+    with col_b:
+        if st.button("🗑️ Eliminar permanentemente", type="primary"):
+            df_borrado = df[df['Nombre/Codigo'] != prod_sel].copy()
+            df_borrado['Produccion'] = df_borrado['Produccion'].dt.strftime('%d/%m/%Y')
+            df_borrado['Vencimiento'] = df_borrado['Vencimiento'].dt.strftime('%d/%m/%Y')
+            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_borrado)
+            st.rerun()

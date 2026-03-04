@@ -2,7 +2,6 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 from datetime import datetime, timedelta
-import streamlit.components.v1 as components
 
 # Configuración de la página
 st.set_page_config(page_title="Mi Inventario Pro", page_icon="🍎", layout="centered")
@@ -11,109 +10,100 @@ st.set_page_config(page_title="Mi Inventario Pro", page_icon="🍎", layout="cen
 url = "https://docs.google.com/spreadsheets/d/1i-P14r4Avk21vuLfqskBKcoj_fgscPYTczrn-8w8C08/edit?usp=sharing"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- FUNCIÓN NOTIFICACIÓN PUSH ---
-def enviar_push(mensaje):
-    js = f"<script>if(window.Notification && Notification.permission==='granted'){{new Notification('{mensaje}');}}</script>"
-    components.html(js, height=0)
-
 # --- LECTURA DE DATOS ---
-try:
-    # Leemos la hoja específicamente y quitamos el caché (ttl=0)
-    df = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
-    # Convertimos a datetime para que Python entienda las fechas
-    df['Produccion'] = pd.to_datetime(df['Produccion'], errors='coerce')
-    df['Vencimiento'] = pd.to_datetime(df['Vencimiento'], errors='coerce')
-except Exception:
-    # Si falla o está vacío, creamos la estructura base
-    df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
+def cargar_datos():
+    try:
+        df_lectura = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
+        # Forzar formato de fecha al leer
+        df_lectura['Produccion'] = pd.to_datetime(df_lectura['Produccion'], dayfirst=True, errors='coerce')
+        df_lectura['Vencimiento'] = pd.to_datetime(df_lectura['Vencimiento'], dayfirst=True, errors='coerce')
+        return df_lectura
+    except:
+        return pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
 
-# --- BARRA LATERAL (REGISTRO) ---
-st.sidebar.header("⚙️ Ajustes")
-dias_alerta = st.sidebar.slider("Anticipación de alerta (días):", 1, 15, 3)
+df = cargar_datos()
 
-st.sidebar.divider()
-st.sidebar.header("📥 Nuevo Producto")
+# --- BARRA LATERAL (REGISTRO NUEVO) ---
+st.sidebar.header("📥 Registrar Nuevo")
+nombre_n = st.sidebar.text_input("Nombre del Producto")
+f_prod_n = st.sidebar.date_input("Fecha Producción", datetime.now())
+f_venc_n = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30))
 
-# Opción de cámara
-activar_camara = st.sidebar.checkbox("📷 Activar Cámara")
-foto = st.sidebar.camera_input("Escanear", key="camara") if activar_camara else None
-
-nombre_prod = st.sidebar.text_input("Nombre del Producto")
-fecha_p = st.sidebar.date_input("Fecha Producción", datetime.now())
-fecha_v = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30))
-
-if st.sidebar.button("💾 Guardar en Inventario"):
-    if nombre_prod:
-        # Crear nueva fila con formato estándar
+if st.sidebar.button("💾 Guardar Nuevo"):
+    if nombre_n:
         nueva_fila = pd.DataFrame([{
-            "Nombre/Codigo": nombre_prod,
-            "Produccion": fecha_p.strftime('%Y-%m-%d'),
-            "Vencimiento": fecha_v.strftime('%Y-%m-%d')
+            "Nombre/Codigo": nombre_n,
+            "Produccion": f_prod_n.strftime('%d/%m/%Y'),
+            "Vencimiento": f_venc_n.strftime('%d/%m/%Y')
         }])
-        
-        # Unir datos y actualizar Google Sheets
-        df_act = pd.concat([df, nueva_fila], ignore_index=True)
-        # Convertimos todo a texto antes de subir para evitar errores de formato
-        df_act['Produccion'] = df_act['Produccion'].astype(str)
-        df_act['Vencimiento'] = df_act['Vencimiento'].astype(str)
-        
-        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_act)
-        st.sidebar.success("¡Producto Guardado!")
+        df_temp = df.copy()
+        df_temp['Produccion'] = df_temp['Produccion'].dt.strftime('%d/%m/%Y')
+        df_temp['Vencimiento'] = df_temp['Vencimiento'].dt.strftime('%d/%m/%Y')
+        df_final = pd.concat([df_temp, nueva_fila], ignore_index=True)
+        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_final)
+        st.sidebar.success("¡Guardado!")
         st.rerun()
-    else:
-        st.sidebar.warning("Por favor, ponle un nombre al producto.")
 
 # --- CUERPO PRINCIPAL ---
 st.title("🍎 Control de Inventario")
 
-# 1. ALERTAS DE VENCIMIENTO
+# 1. ALERTAS
 hoy = datetime.now().date()
-alertas_list = []
-
 if not df.empty:
-    for index, row in df.iterrows():
+    for _, row in df.iterrows():
         if pd.notnull(row['Vencimiento']):
-            f_venc = row['Vencimiento'].date()
-            dias_faltantes = (f_venc - hoy).days
-            
-            if dias_faltantes < 0:
-                st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} (Venció el {f_venc})")
-                alertas_list.append(row['Nombre/Codigo'])
-            elif 0 <= dias_faltantes <= dias_alerta:
-                st.warning(f"⚠️ **POR VENCER**: {row['Nombre/Codigo']} (Quedan {dias_faltantes} días)")
-                alertas_list.append(row['Nombre/Codigo'])
+            dias = (row['Vencimiento'].date() - hoy).days
+            if dias < 0:
+                st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} ({row['Vencimiento'].strftime('%d/%m/%Y')})")
+            elif 0 <= dias <= 5:
+                st.warning(f"⚠️ **POR VENCER**: {row['Nombre/Codigo']} (En {dias} días)")
 
-if not alertas_list and not df.empty:
-    st.success("✅ Todo el inventario está al día.")
-
-# 2. GESTIÓN Y EDICIÓN (Buscador, Modificar y Eliminar)
+# 2. VISTA DE TABLA
 st.divider()
-st.subheader("📦 Gestión de Stock")
-busqueda = st.text_input("🔍 Buscar por nombre...", placeholder="Ej: Pavo")
+st.subheader("📦 Stock Actual")
+df_vista = df.copy()
+df_vista['Produccion'] = df_vista['Produccion'].dt.strftime('%d/%m/%Y')
+df_vista['Vencimiento'] = df_vista['Vencimiento'].dt.strftime('%d/%m/%Y')
+st.dataframe(df_vista, use_container_width=True)
 
-# Filtrar resultados del buscador
-df_final = df.copy()
-if busqueda:
-    df_final = df_final[df_final['Nombre/Codigo'].str.contains(busqueda, case=False, na=False)]
+# 3. PANELES DE EDICIÓN Y ELIMINACIÓN (POR SEPARADO)
+st.divider()
+col1, col2 = st.columns(2)
 
-# Editor dinámico de datos
-# Instrucciones: Para eliminar, selecciona la fila a la izquierda y pulsa 'Suprimir' en tu teclado.
-df_editado = st.data_editor(
-    df_final, 
-    num_rows="dynamic", 
-    use_container_width=True,
-    key="editor_inventario",
-    column_config={
-        "Produccion": st.column_config.DateColumn("Fecha Producción"),
-        "Vencimiento": st.column_config.DateColumn("Fecha Vencimiento")
-    }
-)
+with col1:
+    st.subheader("📝 Editar")
+    if not df.empty:
+        prod_editar = st.selectbox("Selecciona para editar:", df['Nombre/Codigo'].tolist(), key="sel_edit")
+        idx = df[df['Nombre/Codigo'] == prod_editar].index[0]
+        
+        nuevo_nombre = st.text_input("Nuevo nombre:", value=df.at[idx, 'Nombre/Codigo'])
+        nueva_f_p = st.date_input("Nueva Prod.:", value=df.at[idx, 'Produccion'])
+        nueva_f_v = st.date_input("Nueva Venc.:", value=df.at[idx, 'Vencimiento'])
+        
+        if st.button("🆙 Actualizar"):
+            df.at[idx, 'Nombre/Codigo'] = nuevo_nombre
+            df.at[idx, 'Produccion'] = nueva_f_p
+            df.at[idx, 'Vencimiento'] = nueva_f_v
+            
+            # Guardar con formato correcto
+            df_save = df.copy()
+            df_save['Produccion'] = df_save['Produccion'].dt.strftime('%d/%m/%Y')
+            df_save['Vencimiento'] = df_save['Vencimiento'].dt.strftime('%d/%m/%Y')
+            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
+            st.success("Actualizado")
+            st.rerun()
 
-if st.button("🔄 Aplicar Cambios (Guardar edición o Borrados)"):
-    # Limpieza de fechas antes de subir a Sheets
-    df_editado['Produccion'] = pd.to_datetime(df_editado['Produccion']).dt.strftime('%Y-%m-%d')
-    df_editado['Vencimiento'] = pd.to_datetime(df_editado['Vencimiento']).dt.strftime('%Y-%m-%d')
-    
-    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_editado)
-    st.toast("Inventario actualizado correctamente", icon="✅")
-    st.rerun()
+with col2:
+    st.subheader("🗑️ Borrar")
+    if not df.empty:
+        prod_borrar = st.selectbox("Selecciona para borrar:", df['Nombre/Codigo'].tolist(), key="sel_del")
+        if st.button("❌ Eliminar Producto", type="primary"):
+            df_borrado = df[df['Nombre/Codigo'] != prod_borrar]
+            
+            # Guardar con formato correcto
+            df_save = df_borrado.copy()
+            df_save['Produccion'] = df_save['Produccion'].dt.strftime('%d/%m/%Y')
+            df_save['Vencimiento'] = df_save['Vencimiento'].dt.strftime('%d/%m/%Y')
+            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
+            st.error(f"Eliminado: {prod_borrar}")
+            st.rerun()

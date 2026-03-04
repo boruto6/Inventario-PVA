@@ -11,7 +11,7 @@ url = "https://docs.google.com/spreadsheets/d/1i-P14r4Avk21vuLfqskBKcoj_fgscPYTc
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 try:
-    df = conn.read(spreadsheet=url)
+    df = conn.read(spreadsheet=url, worksheet="Hoja 1")
 except:
     df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
 
@@ -62,3 +62,4 @@ if not df.empty:
         enviar_push(f"Aviso: {len(criticos)} productos cerca de vencer")
 else:
     st.info("Inventario vacío.")
+

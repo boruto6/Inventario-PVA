@@ -33,14 +33,29 @@ nombre_prod = st.sidebar.text_input("Nombre del Producto", key="input_nombre")
 fecha_p = st.sidebar.date_input("Fecha Producción", datetime.now(), key="date_prod")
 fecha_v = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30), key="date_venc")
 
+# --- LECTURA DE DATOS ---
+try:
+    # Forzamos la lectura de "Hoja 1" y eliminamos el caché para ver siempre lo nuevo
+    df = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0) 
+except Exception as e:
+    st.error(f"Error al leer: {e}")
+    df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
+
+# --- LÓGICA DE GUARDADO ---
 if st.sidebar.button("💾 Guardar Producto", key="btn_guardar"):
     if nombre_prod:
+        # 1. Crear la nueva fila
         nueva_fila = pd.DataFrame([[nombre_prod, str(fecha_p), str(fecha_v)]], 
                                  columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
+        
+        # 2. Unir con los datos que acabamos de leer
         df_act = pd.concat([df, nueva_fila], ignore_index=True)
-        conn.update(spreadsheet=url, data=df_act)
-        st.sidebar.success("¡Guardado!")
-        st.rerun()
+        
+        # 3. Actualizar la hoja específica "Hoja 1"
+        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_act)
+        
+        st.sidebar.success("¡Guardado correctamente!")
+        st.rerun() # Refresca la app para mostrar la lista actualizada
 
 # --- TABLA Y ALERTAS ---
 st.title("🍎 Control de Inventario")
@@ -62,4 +77,5 @@ if not df.empty:
         enviar_push(f"Aviso: {len(criticos)} productos cerca de vencer")
 else:
     st.info("Inventario vacío.")
+
 

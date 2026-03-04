@@ -27,11 +27,23 @@ dias_alerta = st.sidebar.slider("Días de anticipación:", 1, 15, 2, key="slider
 st.sidebar.divider()
 st.sidebar.header("📥 Registrar")
 
-# Aquí corregimos los IDs para que no haya duplicados
-foto = st.sidebar.camera_input("Escanear producto", key="camara_unica")
+# --- SECCIÓN DE LA CÁMARA ---
+# 1. Agregamos el interruptor
+activar_camara = st.sidebar.checkbox("📷 Activar Cámara", key="toggle_camara")
+
+if activar_camara:
+    # 2. Si está activo, mostramos la cámara que ya tenías
+    # Usamos el código de tu imagen image_b9f444.png
+    foto = st.sidebar.camera_input("Escanear producto", key="camara_unica")
+else:
+    # 3. Si está desactivado, foto queda vacío
+    foto = None
+    st.sidebar.info("Cámara apagada.")
+
+# --- EL RESTO DE TU FORMULARIO (Sigue igual que en image_b9f444.png) ---
 nombre_prod = st.sidebar.text_input("Nombre del Producto", key="input_nombre")
-fecha_p = st.sidebar.date_input("Fecha Producción", datetime.now(), key="date_prod")
-fecha_v = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30), key="date_venc")
+fecha_p = st.sidebar.date_input("Fecha Producción", key="date_prod")
+fecha_v = st.sidebar.date_input("Fecha Vencimiento", key="date_venc")
 
 # --- LECTURA DE DATOS ---
 try:
@@ -77,5 +89,6 @@ if not df.empty:
         enviar_push(f"Aviso: {len(criticos)} productos cerca de vencer")
 else:
     st.info("Inventario vacío.")
+
 
 

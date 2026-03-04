@@ -34,14 +34,13 @@ def enviar_notificacion_externa(mensaje, canal):
 # --- BARRA LATERAL: CONFIGURACIÓN Y REGISTRO ---
 st.sidebar.header("⚙️ Configuración de Alertas")
 
-# CONFIGURACIÓN DE DÍAS (Lo que pediste: Se puede editar aquí mismo)
+# Configuración de días de aviso (Editable por el usuario)
 dias_aviso = st.sidebar.slider("¿Cuántos días antes avisar?", 1, 90, 7)
 canal_notif = st.sidebar.text_input("Canal para notificaciones (Celular):", "mi_inventario_privado_123")
 
 st.sidebar.divider()
 st.sidebar.header("📥 Registrar Nuevo")
 
-# Control de Cámara
 if "camara_on" not in st.session_state:
     st.session_state.camara_on = False
 
@@ -65,7 +64,6 @@ if st.sidebar.button("💾 Guardar Nuevo"):
             "Vencimiento": f_venc_n.strftime('%d/%m/%Y')
         }])
         df_save = pd.concat([df, nueva_fila], ignore_index=True)
-        # Formatear todo a texto antes de subir
         df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
         df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
@@ -75,7 +73,7 @@ if st.sidebar.button("💾 Guardar Nuevo"):
 # --- CUERPO PRINCIPAL ---
 st.title("🍎 Control de Inventario")
 
-# 1. LÓGICA DE ALERTAS (Basada en los días configurados)
+# 1. LÓGICA DE ALERTAS
 hoy = datetime.now().date()
 criticos = []
 
@@ -84,17 +82,16 @@ if not df.empty:
         if pd.notnull(row['Vencimiento']):
             f_venc = row['Vencimiento'].date()
             restan = (f_venc - hoy).days
+            if restan < 0 or (0 <= restan <= dias_aviso):
+                criticos.append(row['Nombre/Codigo'])
             
             if restan < 0:
                 st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} ({f_venc.strftime('%d/%m/%Y')})")
-                criticos.append(row['Nombre/Codigo'])
-            elif 0 <= restan <= dias_aviso: # Aquí se aplica la configuración de días
+            elif 0 <= restan <= dias_aviso:
                 st.warning(f"⚠️ **POR VENCER**: {row['Nombre/Codigo']} (Faltan {restan} días)")
-                criticos.append(row['Nombre/Codigo'])
 
-    # Envío de notificación push
     if criticos and "notificado" not in st.session_state:
-        msg = f"Atención: {len(criticos)} productos vencidos o por vencer pronto."
+        msg = f"Atención: Tienes {len(criticos)} productos próximos a vencer (Configuración: {dias_aviso} días)."
         enviar_notificacion_externa(msg, canal_notif)
         st.session_state.notificado = True
 
@@ -102,25 +99,35 @@ if not df.empty:
 st.subheader("🔍 Buscador")
 busqueda = st.text_input("Filtrar productos...", "").lower()
 
-# 3. TABLAS LIMITADAS
+# 3. VISTA DE TABLAS
 if not df.empty:
     df_filtrado = df[df['Nombre/Codigo'].str.lower().str.contains(busqueda, na=False)].copy()
     
     st.divider()
-    st.subheader(f"⏳ Top 10 Próximos Vencimientos (Días de aviso: {dias_aviso})")
+    st.subheader(f"⏳ Top 10 Próximos Vencimientos")
+    
+    # --- PROCESAR TABLA CON COLUMNA DE AVISO ---
     df_venc = df_filtrado.sort_values(by="Vencimiento").head(10).copy()
+    
+    # Agregamos la columna que pediste (Configuración de aviso)
+    df_venc['Aviso (Días)'] = dias_aviso
+    
+    # Formatear fechas para vista
     df_venc['Produccion'] = df_venc['Produccion'].dt.strftime('%d/%m/%Y')
     df_venc['Vencimiento'] = df_venc['Vencimiento'].dt.strftime('%d/%m/%Y')
-    st.table(df_venc)
+    
+    # Reordenar columnas para que "Aviso (Días)" sea visible al final
+    st.table(df_venc[["Nombre/Codigo", "Produccion", "Vencimiento", "Aviso (Días)"]])
 
     st.divider()
     st.subheader("🆕 Últimos 2 Agregados")
     df_recientes = df_filtrado.tail(2).copy()
+    df_recientes['Aviso (Días)'] = dias_aviso
     df_recientes['Produccion'] = df_recientes['Produccion'].dt.strftime('%d/%m/%Y')
     df_recientes['Vencimiento'] = df_recientes['Vencimiento'].dt.strftime('%d/%m/%Y')
     st.dataframe(df_recientes, use_container_width=True)
 
-# 4. GESTIÓN DE ERRORES (EDITAR Y MODIFICAR LO QUE ESTÉ MAL)
+# 4. GESTIÓN DE ERRORES (EDITAR/MODIFICAR)
 st.divider()
 st.subheader("🛠️ Corregir Errores de Registro")
 
@@ -132,7 +139,6 @@ if not df.empty:
     with col_a:
         with st.expander("📝 Editar Datos"):
             n_nom = st.text_input("Corregir Nombre", value=df.at[idx, 'Nombre/Codigo'])
-            # Se asegura que la fecha se lea bien para editarla
             val_venc = df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now()
             n_venc = st.date_input("Corregir Vencimiento", value=val_venc, format="DD/MM/YYYY")
             
@@ -143,12 +149,4 @@ if not df.empty:
                 df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
                 df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
-                st.success("¡Corregido!")
-                st.rerun()
-    with col_b:
-        if st.button("🗑️ Eliminar permanentemente", type="primary"):
-            df_borrado = df[df['Nombre/Codigo'] != prod_sel].copy()
-            df_borrado['Produccion'] = df_borrado['Produccion'].dt.strftime('%d/%m/%Y')
-            df_borrado['Vencimiento'] = df_borrado['Vencimiento'].dt.strftime('%d/%m/%Y')
-            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_borrado)
-            st.rerun()
+                st.success("¡

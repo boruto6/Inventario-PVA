@@ -17,6 +17,7 @@ def cargar_datos():
         if "Aviso_Dias" not in df_raw.columns:
             df_raw["Aviso_Dias"] = 7
         for col in ['Produccion', 'Vencimiento']:
+            # Forzamos que el día vaya primero al leer de la hoja
             df_raw[col] = pd.to_datetime(df_raw[col], dayfirst=True, errors='coerce')
         return df_raw
     except Exception:
@@ -62,9 +63,11 @@ if st.sidebar.button("💾 Guardar Nuevo"):
             "Vencimiento": f_venc_n.strftime('%d/%m/%Y'),
             "Aviso_Dias": dias_propio
         }])
+        # Unimos y nos aseguramos de que antes de subir, todo sea formato texto DD/MM/YYYY
         df_save = pd.concat([df, nueva_fila], ignore_index=True)
-        df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
-        df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
+        df_save['Produccion'] = pd.to_datetime(df_save['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
+        df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
+        
         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
         st.sidebar.success("¡Registrado!")
         st.rerun()
@@ -102,6 +105,7 @@ if not df.empty:
     
     st.divider()
     st.subheader("⏳ Top 10 Próximos Vencimientos")
+    # Ordenar asegurando que la fecha se entienda correctamente
     df_venc = df_filtrado.sort_values(by="Vencimiento").head(10).copy()
     df_venc['Produccion'] = df_venc['Produccion'].dt.strftime('%d/%m/%Y')
     df_venc['Vencimiento'] = df_venc['Vencimiento'].dt.strftime('%d/%m/%Y')
@@ -137,22 +141,19 @@ if not df.empty:
                 df.at[idx, 'Vencimiento'] = nuevo_v
                 df.at[idx, 'Aviso_Dias'] = nuevo_a
                 df_upd = df.copy()
-                df_upd['Produccion'] = pd.to_datetime(df_upd['Produccion']).dt.strftime('%d/%m/%Y')
-                df_upd['Vencimiento'] = pd.to_datetime(df_upd['Vencimiento']).dt.strftime('%d/%m/%Y')
+                # Volvemos a formatear a texto DD/MM/YYYY para evitar errores en la hoja
+                df_upd['Produccion'] = pd.to_datetime(df_upd['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
+                df_upd['Vencimiento'] = pd.to_datetime(df_upd['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_upd)
                 st.success("¡Actualizado!")
                 st.rerun()
 
     with col_der:
-        # AQUÍ ESTÁ EL BOTÓN DE BORRAR
         st.write("🗑️ **Zona de Peligro**")
         if st.button(f"Borrar {producto_seleccionado}", type="primary"):
-            # Filtramos el dataframe para quitar el producto seleccionado
             df_final = df[df['Nombre/Codigo'] != producto_seleccionado].copy()
-            # Formateamos fechas a texto para que Google Sheets lo entienda
-            df_final['Produccion'] = df_final['Produccion'].dt.strftime('%d/%m/%Y')
-            df_final['Vencimiento'] = df_final['Vencimiento'].dt.strftime('%d/%m/%Y')
-            # Subimos la tabla actualizada (sin el producto borrado)
+            df_final['Produccion'] = pd.to_datetime(df_final['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
+            df_final['Vencimiento'] = pd.to_datetime(df_final['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
             conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_final)
             st.warning(f"Producto '{producto_seleccionado}' eliminado.")
             st.rerun()

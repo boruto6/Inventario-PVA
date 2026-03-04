@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import requests
 
 # 1. CONFIGURACIÓN DE PÁGINA
-st.set_page_config(page_title="Inventario Personalizado", page_icon="🍎", layout="centered")
+st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="centered")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 url = "https://docs.google.com/spreadsheets/d/1i-P14r4Avk21vuLfqskBKcoj_fgscPYTczrn-8w8C08/edit?usp=sharing"
@@ -14,7 +14,7 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos():
     try:
         df_raw = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
-        # Asegurar que existan las columnas necesarias
+        # Asegurar columna de aviso independiente
         if "Aviso_Dias" not in df_raw.columns:
             df_raw["Aviso_Dias"] = 7
         
@@ -26,19 +26,26 @@ def cargar_datos():
 
 df = cargar_datos()
 
-# --- FUNCIÓN DE NOTIFICACIÓN ---
-def enviar_notificacion(mensaje, canal):
+# --- FUNCIÓN DE NOTIFICACIÓN EXTERNA ---
+def enviar_notificacion_externa(mensaje, canal):
     try:
-        requests.post(f"https://ntfy.sh/{canal}", data=mensaje.encode('utf-8'))
-    except: pass
+        requests.post(f"https://ntfy.sh/{canal}", 
+                      data=mensaje.encode('utf-8'),
+                      headers={"Title": "Alerta de Inventario 🍎", "Priority": "high"})
+    except:
+        pass
 
-# --- BARRA LATERAL: REGISTRO CON SLIDER INDEPENDIENTE ---
-st.sidebar.header("📥 Registrar Nuevo")
+# --- BARRA LATERAL: REGISTRO ---
+st.sidebar.header("⚙️ Configuración y Registro")
+canal_notif = st.sidebar.text_input("Canal Notificaciones (Celular):", "mi_inventario_privado_123")
+
+st.sidebar.divider()
 
 if "camara_on" not in st.session_state:
     st.session_state.camara_on = False
 
-if st.sidebar.button("📷 Alternar Cámara"):
+btn_cam = "🔴 Apagar Cámara" if st.session_state.camara_on else "📷 Activar Cámara"
+if st.sidebar.button(btn_cam):
     st.session_state.camara_on = not st.session_state.camara_on
     st.rerun()
 
@@ -46,13 +53,13 @@ if st.session_state.camara_on:
     st.sidebar.camera_input("Capturar", key="cam")
 
 nombre_n = st.sidebar.text_input("Nombre del Producto")
-f_prod_n = st.sidebar.date_input("Producción", datetime.now(), format="DD/MM/YYYY")
-f_venc_n = st.sidebar.date_input("Vencimiento", datetime.now() + timedelta(days=30), format="DD/MM/YYYY")
+f_prod_n = st.sidebar.date_input("Fecha Producción", datetime.now(), format="DD/MM/YYYY")
+f_venc_n = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30), format="DD/MM/YYYY")
 
-# AQUÍ DEFINES EL AVISO PARA ESTE PRODUCTO ESPECÍFICO
+# Aviso independiente por producto
 dias_propio = st.sidebar.slider("Días de aviso para este producto:", 1, 30, 7)
 
-if st.sidebar.button("💾 Guardar"):
+if st.sidebar.button("💾 Guardar Nuevo"):
     if nombre_n:
         nueva_fila = pd.DataFrame([{
             "Nombre/Codigo": nombre_n,
@@ -61,56 +68,76 @@ if st.sidebar.button("💾 Guardar"):
             "Aviso_Dias": dias_propio
         }])
         df_save = pd.concat([df, nueva_fila], ignore_index=True)
-        # Convertir a texto para la nube
         df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
         df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
-        st.sidebar.success(f"¡{nombre_n} guardado con aviso de {dias_propio} días!")
+        st.sidebar.success("¡Registrado con éxito!")
         st.rerun()
 
 # --- CUERPO PRINCIPAL ---
 st.title("🍎 Control de Inventario")
 
-# 1. ALERTAS BASADAS EN EL AVISO INDEPENDIENTE DE CADA FILA
+# 1. LÓGICA DE ALERTAS Y NOTIFICACIÓN
 hoy = datetime.now().date()
+criticos = []
+
 if not df.empty:
     for _, row in df.iterrows():
         if pd.notnull(row['Vencimiento']):
             f_venc = row['Vencimiento'].date()
             restan = (f_venc - hoy).days
-            # Usamos el valor guardado en la columna 'Aviso_Dias' para este producto
-            limite_aviso = row['Aviso_Dias']
+            limite = row['Aviso_Dias']
             
             if restan < 0:
-                st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} (Venció el {f_venc.strftime('%d/%m/%Y')})")
-            elif 0 <= restan <= limite_aviso:
-                st.warning(f"⚠️ **RETIRAR PRONTO**: {row['Nombre/Codigo']} (Faltan {restan} días. Configurado para avisar {limite_aviso} días antes)")
+                st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} ({f_venc.strftime('%d/%m/%Y')})")
+                criticos.append(row['Nombre/Codigo'])
+            elif 0 <= restan <= limite:
+                st.warning(f"⚠️ **RETIRAR**: {row['Nombre/Codigo']} (Faltan {restan} días / Aviso a los {limite})")
+                criticos.append(row['Nombre/Codigo'])
 
-# 2. TABLA DE STOCK ACTUAL
-st.subheader("📦 Stock Actual")
+    if criticos and "notificado" not in st.session_state:
+        enviar_notificacion_externa(f"Atención: {len(criticos)} productos requieren revisión inmediata.", canal_notif)
+        st.session_state.notificado = True
+
+# 2. BUSCADOR
+st.subheader("🔍 Buscador")
+busqueda = st.text_input("Filtrar productos...", "").lower()
+
+# 3. VISTA DE TABLAS (TOP 10 Y ÚLTIMOS 2)
 if not df.empty:
-    # Formatear para visualización limpia
-    df_ver = df.copy()
-    df_ver['Produccion'] = df_ver['Produccion'].dt.strftime('%d/%m/%Y')
-    df_ver['Vencimiento'] = df_ver['Vencimiento'].dt.strftime('%d/%m/%Y')
+    df_filtrado = df[df['Nombre/Codigo'].str.lower().str.contains(busqueda, na=False)].copy()
     
-    # Mostrar tabla con la columna Aviso_Dias que ahora es distinta para cada uno
-    st.table(df_ver[["Nombre/Codigo", "Produccion", "Vencimiento", "Aviso_Dias"]])
+    st.divider()
+    st.subheader("⏳ Top 10 Próximos Vencimientos")
+    df_venc = df_filtrado.sort_values(by="Vencimiento").head(10).copy()
+    df_venc['Produccion'] = df_venc['Produccion'].dt.strftime('%d/%m/%Y')
+    df_venc['Vencimiento'] = df_venc['Vencimiento'].dt.strftime('%d/%m/%Y')
+    st.table(df_venc[["Nombre/Codigo", "Produccion", "Vencimiento", "Aviso_Dias"]])
 
-# 3. GESTIÓN (PARA CORREGIR LOS DÍAS DE AVISO SI HAY ERRORES)
+    st.divider()
+    st.subheader("🆕 Últimos 2 Agregados")
+    df_recientes = df_filtrado.tail(2).copy()
+    df_recientes['Produccion'] = df_recientes['Produccion'].dt.strftime('%d/%m/%Y')
+    df_recientes['Vencimiento'] = df_recientes['Vencimiento'].dt.strftime('%d/%m/%Y')
+    st.dataframe(df_recientes[["Nombre/Codigo", "Produccion", "Vencimiento", "Aviso_Dias"]], use_container_width=True)
+
+# 4. GESTIÓN (EDITAR Y BORRAR)
 st.divider()
-st.subheader("🛠️ Corregir Aviso o Datos")
+st.subheader("🛠️ Gestión de Productos")
+
 if not df.empty:
-    prod_edit = st.selectbox("Seleccionar producto:", df['Nombre/Codigo'].tolist())
-    idx = df[df['Nombre/Codigo'] == prod_edit].index[0]
+    prod_sel = st.selectbox("Selecciona producto para modificar o eliminar:", df['Nombre/Codigo'].tolist())
+    idx = df[df['Nombre/Codigo'] == prod_sel].index[0]
     
-    with st.expander("Modificar configuración"):
-        nuevo_aviso = st.slider("Cambiar días de aviso:", 1, 30, int(df.at[idx, 'Aviso_Dias']))
-        if st.button("Actualizar Configuración"):
-            df.at[idx, 'Aviso_Dias'] = nuevo_aviso
-            df_save = df.copy()
-            df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
-            df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
-            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
-            st.success("¡Configuración actualizada!")
-            st.rerun()
+    col_edit, col_del = st.columns(2)
+    
+    with col_edit:
+        with st.expander("📝 Corregir Datos / Aviso"):
+            n_nom = st.text_input("Nuevo Nombre", value=df.at[idx, 'Nombre/Codigo'])
+            f_v_v = df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now()
+            n_venc = st.date_input("Nuevo Vencimiento", value=f_v_v, format="DD/MM/YYYY")
+            n_avis = st.slider("Nuevo Aviso (Días)", 1, 30, int(df.at[idx, 'Aviso_Dias']))
+            
+            if st.button("Actualizar"):
+                df.at[idx, 'Nombre/Codigo'] = n_nom
+                df.at[idx, 'Vencimiento'] = n_venc

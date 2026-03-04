@@ -4,173 +4,116 @@ import pandas as pd
 from datetime import datetime, timedelta
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="Mi Inventario Pro", page_icon="🍎")
+# Configuración de la página
+st.set_page_config(page_title="Mi Inventario Pro", page_icon="🍎", layout="centered")
 
 # --- CONEXIÓN A GOOGLE SHEETS ---
 url = "https://docs.google.com/spreadsheets/d/1i-P14r4Avk21vuLfqskBKcoj_fgscPYTczrn-8w8C08/edit?usp=sharing"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- REEMPLAZO DE LECTURA (image_ba1685.png) ---
-try:
-    # Leemos la hoja y forzamos el formato de fecha latino
-    df = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
-    df['Produccion'] = pd.to_datetime(df['Produccion']).dt.strftime('%d/%m/%Y')
-    df['Vencimiento'] = pd.to_datetime(df['Vencimiento']).dt.strftime('%d/%m/%Y')
-except Exception:
-    df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
-
-# --- SISTEMA DE ALERTAS (Estilo Móvil) ---
-hoy = pd.to_datetime("today")
-alertas_visibles = False
-
-for index, row in df.iterrows():
-    try:
-        f_venc = pd.to_datetime(row['Vencimiento'], dayfirst=True)
-        dias_faltantes = (f_venc - hoy).days + 1
-        
-        if dias_faltantes < 0:
-            st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} (Venció el {row['Vencimiento']})")
-            alertas_visibles = True
-        elif 0 <= dias_faltantes <= 3:
-            st.warning(f"⚠️ **POR VENCER**: {row['Nombre/Codigo']} (Faltan {dias_faltantes} días)")
-            alertas_visibles = True
-    except:
-        continue
-
-if not alertas_visibles:
-    st.success("✅ Inventario al día. Sin vencimientos próximos.")
-# --- AGREGAR BUSCADOR JUSTO AQUÍ ---
-st.markdown("### 🔍 Buscador Estilo App")
-busqueda = st.text_input("Buscar producto por nombre...", placeholder="Ej: Pavo")
-
-# --- SISTEMA DE ALERTAS (Estilo Móvil) ---
-hoy = pd.to_datetime("today")
-alertas_visibles = False
-
-for index, row in df.iterrows():
-    try:
-        f_venc = pd.to_datetime(row['Vencimiento'], dayfirst=True)
-        dias_faltantes = (f_venc - hoy).days + 1
-        
-        if dias_faltantes < 0:
-            st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} (Venció el {row['Vencimiento']})")
-            alertas_visibles = True
-        elif 0 <= dias_faltantes <= 3:
-            st.warning(f"⚠️ **POR VENCER**: {row['Nombre/Codigo']} (Faltan {dias_faltantes} días)")
-            alertas_visibles = True
-    except:
-        continue
-
-if not alertas_visibles:
-    st.success("✅ Inventario al día. Sin vencimientos próximos.")
-    
 # --- FUNCIÓN NOTIFICACIÓN PUSH ---
 def enviar_push(mensaje):
     js = f"<script>if(window.Notification && Notification.permission==='granted'){{new Notification('{mensaje}');}}</script>"
     components.html(js, height=0)
 
-# --- BARRA LATERAL (CONFIGURACIÓN Y REGISTRO) ---
-st.sidebar.header("⚙️ Ajustes")
-dias_alerta = st.sidebar.slider("Días de anticipación:", 1, 15, 2, key="slider_alerta")
-
-st.sidebar.divider()
-st.sidebar.header("📥 Registrar")
-
-# --- SECCIÓN DE LA CÁMARA ---
-# 1. Agregamos el interruptor
-activar_camara = st.sidebar.checkbox("📷 Activar Cámara", key="toggle_camara")
-
-if activar_camara:
-    # 2. Si está activo, mostramos la cámara que ya tenías
-    # Usamos el código de tu imagen image_b9f444.png
-    foto = st.sidebar.camera_input("Escanear producto", key="camara_unica")
-else:
-    # 3. Si está desactivado, foto queda vacío
-    foto = None
-    st.sidebar.info("Cámara apagada.")
-
-# --- EL RESTO DE TU FORMULARIO (Sigue igual que en image_b9f444.png) ---
-nombre_prod = st.sidebar.text_input("Nombre del Producto", key="input_nombre")
-fecha_p = st.sidebar.date_input("Fecha Producción", key="date_prod")
-fecha_v = st.sidebar.date_input("Fecha Vencimiento", key="date_venc")
-
 # --- LECTURA DE DATOS ---
 try:
-    # Forzamos la lectura de "Hoja 1" y eliminamos el caché para ver siempre lo nuevo
-    df = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0) 
-except Exception as e:
-    st.error(f"Error al leer: {e}")
-    df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
-
-# --- LÓGICA DE GUARDADO ---
-if st.sidebar.button("💾 Guardar Producto", key="btn_guardar"):
-    if nombre_prod:
-        # 1. Crear la nueva fila
-       # --- MODIFICACIÓN EN GUARDAR (image_ba03a6.png) ---
-# --- REEMPLAZO PARA image_ba1685.png ---
-try:
-    # Leemos la hoja y forzamos que no use caché (ttl=0)
+    # Leemos la hoja específicamente y quitamos el caché (ttl=0)
     df = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
-    # Convertimos a formato latino para que sea legible en la app
-    df['Produccion'] = pd.to_datetime(df['Produccion']).dt.strftime('%d/%m/%Y')
-    df['Vencimiento'] = pd.to_datetime(df['Vencimiento']).dt.strftime('%d/%m/%Y')
+    # Convertimos a datetime para que Python entienda las fechas
+    df['Produccion'] = pd.to_datetime(df['Produccion'], errors='coerce')
+    df['Vencimiento'] = pd.to_datetime(df['Vencimiento'], errors='coerce')
 except Exception:
+    # Si falla o está vacío, creamos la estructura base
     df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
 
-# --- BUSCADOR ESTILO APP ---
-st.markdown("### 🔍 Buscador de Productos")
-busqueda = st.text_input("Buscar por nombre...", placeholder="Ej: Pavo")
-        
-        # 2. Unir con los datos que acabamos de leer
-        df_act = pd.concat([df, nueva_fila], ignore_index=True)
-        
-        # 3. Actualizar la hoja específica "Hoja 1"
-        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_act)
-        
-        st.sidebar.success("¡Guardado correctamente!")
-        st.rerun() # Refresca la app para mostrar la lista actualizada
+# --- BARRA LATERAL (REGISTRO) ---
+st.sidebar.header("⚙️ Ajustes")
+dias_alerta = st.sidebar.slider("Anticipación de alerta (días):", 1, 15, 3)
 
-# --- TABLA Y ALERTAS ---
+st.sidebar.divider()
+st.sidebar.header("📥 Nuevo Producto")
+
+# Opción de cámara
+activar_camara = st.sidebar.checkbox("📷 Activar Cámara")
+foto = st.sidebar.camera_input("Escanear", key="camara") if activar_camara else None
+
+nombre_prod = st.sidebar.text_input("Nombre del Producto")
+fecha_p = st.sidebar.date_input("Fecha Producción", datetime.now())
+fecha_v = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30))
+
+if st.sidebar.button("💾 Guardar en Inventario"):
+    if nombre_prod:
+        # Crear nueva fila con formato estándar
+        nueva_fila = pd.DataFrame([{
+            "Nombre/Codigo": nombre_prod,
+            "Produccion": fecha_p.strftime('%Y-%m-%d'),
+            "Vencimiento": fecha_v.strftime('%Y-%m-%d')
+        }])
+        
+        # Unir datos y actualizar Google Sheets
+        df_act = pd.concat([df, nueva_fila], ignore_index=True)
+        # Convertimos todo a texto antes de subir para evitar errores de formato
+        df_act['Produccion'] = df_act['Produccion'].astype(str)
+        df_act['Vencimiento'] = df_act['Vencimiento'].astype(str)
+        
+        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_act)
+        st.sidebar.success("¡Producto Guardado!")
+        st.rerun()
+    else:
+        st.sidebar.warning("Por favor, ponle un nombre al producto.")
+
+# --- CUERPO PRINCIPAL ---
 st.title("🍎 Control de Inventario")
 
+# 1. ALERTAS DE VENCIMIENTO
+hoy = datetime.now().date()
+alertas_list = []
+
 if not df.empty:
-    df['Vencimiento'] = pd.to_datetime(df['Vencimiento'])
-    hoy = pd.to_datetime(datetime.now().date())
-    limite = hoy + timedelta(days=dias_alerta)
+    for index, row in df.iterrows():
+        if pd.notnull(row['Vencimiento']):
+            f_venc = row['Vencimiento'].date()
+            dias_faltantes = (f_venc - hoy).days
+            
+            if dias_faltantes < 0:
+                st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} (Venció el {f_venc})")
+                alertas_list.append(row['Nombre/Codigo'])
+            elif 0 <= dias_faltantes <= dias_alerta:
+                st.warning(f"⚠️ **POR VENCER**: {row['Nombre/Codigo']} (Quedan {dias_faltantes} días)")
+                alertas_list.append(row['Nombre/Codigo'])
+
+if not alertas_list and not df.empty:
+    st.success("✅ Todo el inventario está al día.")
+
+# 2. GESTIÓN Y EDICIÓN (Buscador, Modificar y Eliminar)
+st.divider()
+st.subheader("📦 Gestión de Stock")
+busqueda = st.text_input("🔍 Buscar por nombre...", placeholder="Ej: Pavo")
+
+# Filtrar resultados del buscador
+df_final = df.copy()
+if busqueda:
+    df_final = df_final[df_final['Nombre/Codigo'].str.contains(busqueda, case=False, na=False)]
+
+# Editor dinámico de datos
+# Instrucciones: Para eliminar, selecciona la fila a la izquierda y pulsa 'Suprimir' en tu teclado.
+df_editado = st.data_editor(
+    df_final, 
+    num_rows="dynamic", 
+    use_container_width=True,
+    key="editor_inventario",
+    column_config={
+        "Produccion": st.column_config.DateColumn("Fecha Producción"),
+        "Vencimiento": st.column_config.DateColumn("Fecha Vencimiento")
+    }
+)
+
+if st.button("🔄 Aplicar Cambios (Guardar edición o Borrados)"):
+    # Limpieza de fechas antes de subir a Sheets
+    df_editado['Produccion'] = pd.to_datetime(df_editado['Produccion']).dt.strftime('%Y-%m-%d')
+    df_editado['Vencimiento'] = pd.to_datetime(df_editado['Vencimiento']).dt.strftime('%Y-%m-%d')
     
-    def color_filas(row):
-        if row['Vencimiento'] <= hoy: return ['background-color: #ff4b4b'] * len(row)
-        if row['Vencimiento'] <= limite: return ['background-color: #ffa500'] * len(row)
-        return [''] * len(row)
-
-    st.dataframe(df.style.apply(color_filas, axis=1), use_container_width=True)
-    
-    criticos = df[df['Vencimiento'] <= limite]
-    if not criticos.empty:
-        enviar_push(f"Aviso: {len(criticos)} productos cerca de vencer")
-else:
-    st.info("Inventario vacío.")
-
-# --- TABLA DE GESTIÓN (REEMPLAZA TU DATAFRAME ACTUAL) ---
-st.subheader("📦 Gestión de Inventario")
-
-# Filtramos la tabla si usas el buscador
-df_final = df[df['Nombre/Codigo'].str.contains(busqueda, case=False, na=False)] if busqueda else df
-
-# Editor que permite modificar celdas y borrar filas (tecla Suprimir)
-df_editado = st.data_editor(df_final, num_rows="dynamic", use_container_width=True, key="gestor_app")
-
-if st.button("🔄 Aplicar Cambios (Modificar o Eliminar)"):
-    # Si buscaste algo, actualizamos el original antes de subir
-    if busqueda:
-        df.update(df_editado)
-        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df)
-    else:
-        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_editado)
-    st.toast("¡Base de datos actualizada!", icon="🔄")
+    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_editado)
+    st.toast("Inventario actualizado correctamente", icon="✅")
     st.rerun()
-
-
-
-
-

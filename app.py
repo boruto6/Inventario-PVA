@@ -107,12 +107,19 @@ if st.sidebar.button("💾 Guardar Producto", key="btn_guardar"):
     if nombre_prod:
         # 1. Crear la nueva fila
        # --- MODIFICACIÓN EN GUARDAR (image_ba03a6.png) ---
-# Cambia solo la línea de nueva_fila por esta:
-nueva_fila = pd.DataFrame([[
-    nombre_prod, 
-    fecha_p.strftime('%d/%m/%Y'), 
-    fecha_v.strftime('%d/%m/%Y')
-]], columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
+# --- REEMPLAZO PARA image_ba1685.png ---
+try:
+    # Leemos la hoja y forzamos que no use caché (ttl=0)
+    df = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
+    # Convertimos a formato latino para que sea legible en la app
+    df['Produccion'] = pd.to_datetime(df['Produccion']).dt.strftime('%d/%m/%Y')
+    df['Vencimiento'] = pd.to_datetime(df['Vencimiento']).dt.strftime('%d/%m/%Y')
+except Exception:
+    df = pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento"])
+
+# --- BUSCADOR ESTILO APP ---
+st.markdown("### 🔍 Buscador de Productos")
+busqueda = st.text_input("Buscar por nombre...", placeholder="Ej: Pavo")
         
         # 2. Unir con los datos que acabamos de leer
         df_act = pd.concat([df, nueva_fila], ignore_index=True)
@@ -162,6 +169,7 @@ if st.button("🔄 Aplicar Cambios (Modificar o Eliminar)"):
         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_editado)
     st.toast("¡Base de datos actualizada!", icon="🔄")
     st.rerun()
+
 
 
 

@@ -14,10 +14,8 @@ conn = st.connection("gsheets", type=GSheetsConnection)
 def cargar_datos():
     try:
         df_raw = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
-        # Asegurar columna de aviso independiente
         if "Aviso_Dias" not in df_raw.columns:
             df_raw["Aviso_Dias"] = 7
-        
         for col in ['Produccion', 'Vencimiento']:
             df_raw[col] = pd.to_datetime(df_raw[col], dayfirst=True, errors='coerce')
         return df_raw
@@ -26,7 +24,7 @@ def cargar_datos():
 
 df = cargar_datos()
 
-# --- FUNCIÓN DE NOTIFICACIÓN EXTERNA ---
+# --- FUNCIÓN DE NOTIFICACIÓN ---
 def enviar_notificacion_externa(mensaje, canal):
     try:
         requests.post(f"https://ntfy.sh/{canal}", 
@@ -44,8 +42,7 @@ st.sidebar.divider()
 if "camara_on" not in st.session_state:
     st.session_state.camara_on = False
 
-btn_cam = "🔴 Apagar Cámara" if st.session_state.camara_on else "📷 Activar Cámara"
-if st.sidebar.button(btn_cam):
+if st.sidebar.button("📷 Alternar Cámara"):
     st.session_state.camara_on = not st.session_state.camara_on
     st.rerun()
 
@@ -55,8 +52,6 @@ if st.session_state.camara_on:
 nombre_n = st.sidebar.text_input("Nombre del Producto")
 f_prod_n = st.sidebar.date_input("Fecha Producción", datetime.now(), format="DD/MM/YYYY")
 f_venc_n = st.sidebar.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30), format="DD/MM/YYYY")
-
-# Aviso independiente por producto
 dias_propio = st.sidebar.slider("Días de aviso para este producto:", 1, 30, 7)
 
 if st.sidebar.button("💾 Guardar Nuevo"):
@@ -71,39 +66,37 @@ if st.sidebar.button("💾 Guardar Nuevo"):
         df_save['Produccion'] = pd.to_datetime(df_save['Produccion']).dt.strftime('%d/%m/%Y')
         df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento']).dt.strftime('%d/%m/%Y')
         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
-        st.sidebar.success("¡Registrado con éxito!")
+        st.sidebar.success("¡Registrado!")
         st.rerun()
 
 # --- CUERPO PRINCIPAL ---
 st.title("🍎 Control de Inventario")
 
-# 1. LÓGICA DE ALERTAS Y NOTIFICACIÓN
+# 1. ALERTAS
 hoy = datetime.now().date()
 criticos = []
-
 if not df.empty:
     for _, row in df.iterrows():
         if pd.notnull(row['Vencimiento']):
             f_venc = row['Vencimiento'].date()
             restan = (f_venc - hoy).days
             limite = row['Aviso_Dias']
-            
             if restan < 0:
                 st.error(f"🚫 **CADUCADO**: {row['Nombre/Codigo']} ({f_venc.strftime('%d/%m/%Y')})")
                 criticos.append(row['Nombre/Codigo'])
             elif 0 <= restan <= limite:
-                st.warning(f"⚠️ **RETIRAR**: {row['Nombre/Codigo']} (Faltan {restan} días / Aviso a los {limite})")
+                st.warning(f"⚠️ **RETIRAR**: {row['Nombre/Codigo']} (Faltan {restan} días / Aviso: {limite})")
                 criticos.append(row['Nombre/Codigo'])
 
     if criticos and "notificado" not in st.session_state:
-        enviar_notificacion_externa(f"Atención: {len(criticos)} productos requieren revisión inmediata.", canal_notif)
+        enviar_notificacion_externa(f"Atención: {len(criticos)} productos críticos.", canal_notif)
         st.session_state.notificado = True
 
 # 2. BUSCADOR
 st.subheader("🔍 Buscador")
 busqueda = st.text_input("Filtrar productos...", "").lower()
 
-# 3. VISTA DE TABLAS (TOP 10 Y ÚLTIMOS 2)
+# 3. TABLAS (TOP 10 Y ÚLTIMOS 2)
 if not df.empty:
     df_filtrado = df[df['Nombre/Codigo'].str.lower().str.contains(busqueda, na=False)].copy()
     
@@ -126,18 +119,40 @@ st.divider()
 st.subheader("🛠️ Gestión de Productos")
 
 if not df.empty:
-    prod_sel = st.selectbox("Selecciona producto para modificar o eliminar:", df['Nombre/Codigo'].tolist())
-    idx = df[df['Nombre/Codigo'] == prod_sel].index[0]
+    lista_productos = df['Nombre/Codigo'].tolist()
+    producto_seleccionado = st.selectbox("Selecciona un producto para modificar o eliminar:", lista_productos)
+    idx = df[df['Nombre/Codigo'] == producto_seleccionado].index[0]
     
-    col_edit, col_del = st.columns(2)
+    col_izq, col_der = st.columns(2)
     
-    with col_edit:
-        with st.expander("📝 Corregir Datos / Aviso"):
-            n_nom = st.text_input("Nuevo Nombre", value=df.at[idx, 'Nombre/Codigo'])
-            f_v_v = df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now()
-            n_venc = st.date_input("Nuevo Vencimiento", value=f_v_v, format="DD/MM/YYYY")
-            n_avis = st.slider("Nuevo Aviso (Días)", 1, 30, int(df.at[idx, 'Aviso_Dias']))
+    with col_izq:
+        with st.expander("📝 Editar Datos"):
+            nuevo_n = st.text_input("Nombre", value=df.at[idx, 'Nombre/Codigo'])
+            f_v_actual = df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now()
+            nuevo_v = st.date_input("Vencimiento", value=f_v_actual, format="DD/MM/YYYY")
+            nuevo_a = st.slider("Días de Aviso", 1, 30, int(df.at[idx, 'Aviso_Dias']))
             
             if st.button("Actualizar"):
-                df.at[idx, 'Nombre/Codigo'] = n_nom
-                df.at[idx, 'Vencimiento'] = n_venc
+                df.at[idx, 'Nombre/Codigo'] = nuevo_n
+                df.at[idx, 'Vencimiento'] = nuevo_v
+                df.at[idx, 'Aviso_Dias'] = nuevo_a
+                df_upd = df.copy()
+                df_upd['Produccion'] = pd.to_datetime(df_upd['Produccion']).dt.strftime('%d/%m/%Y')
+                df_upd['Vencimiento'] = pd.to_datetime(df_upd['Vencimiento']).dt.strftime('%d/%m/%Y')
+                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_upd)
+                st.success("¡Actualizado!")
+                st.rerun()
+
+    with col_der:
+        # AQUÍ ESTÁ EL BOTÓN DE BORRAR
+        st.write("🗑️ **Zona de Peligro**")
+        if st.button(f"Borrar {producto_seleccionado}", type="primary"):
+            # Filtramos el dataframe para quitar el producto seleccionado
+            df_final = df[df['Nombre/Codigo'] != producto_seleccionado].copy()
+            # Formateamos fechas a texto para que Google Sheets lo entienda
+            df_final['Produccion'] = df_final['Produccion'].dt.strftime('%d/%m/%Y')
+            df_final['Vencimiento'] = df_final['Vencimiento'].dt.strftime('%d/%m/%Y')
+            # Subimos la tabla actualizada (sin el producto borrado)
+            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_final)
+            st.warning(f"Producto '{producto_seleccionado}' eliminado.")
+            st.rerun()

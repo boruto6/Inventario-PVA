@@ -25,12 +25,17 @@ def cargar_datos():
 
 df = cargar_datos()
 
-# --- FUNCIÓN DE NOTIFICACIÓN ---
+# --- FUNCIÓN DE NOTIFICACIÓN (MEJORADA PARA QUE SUENE) ---
 def enviar_notificacion_externa(mensaje, canal):
     try:
+        # Se agrega Priority: 5 (Máxima) y Tags para forzar el sonido en el móvil
         requests.post(f"https://ntfy.sh/{canal}", 
                       data=mensaje.encode('utf-8'),
-                      headers={"Title": "Alerta de Inventario 🍎", "Priority": "high"})
+                      headers={
+                          "Title": "🚨 ALERTA DE INVENTARIO",
+                          "Priority": "5",
+                          "Tags": "warning,loud_sound"
+                      })
     except:
         pass
 
@@ -91,7 +96,7 @@ if not df.empty:
                 criticos.append(row['Nombre/Codigo'])
 
     if criticos and "notificado" not in st.session_state:
-        enviar_notificacion_externa(f"Atención: {len(criticos)} productos críticos.", canal_notif)
+        enviar_notificacion_externa(f"Atención: {len(criticos)} productos requieren revisión inmediata.", canal_notif)
         st.session_state.notificado = True
 
 # 2. BUSCADOR

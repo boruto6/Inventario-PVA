@@ -154,3 +154,24 @@ if not df.empty:
             df_f['Vencimiento'] = pd.to_datetime(df_f['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
             conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_f)
             st.rerun()
+
+# --- FUNCIÓN DE NOTIFICACIÓN MEJORADA ---
+def enviar_notificacion_externa(mensaje, canal):
+    try:
+        # Usamos un tiempo de espera (timeout) para que no se quede pegado
+        response = requests.post(
+            f"https://ntfy.sh/{canal}", 
+            data=mensaje.encode('utf-8'),
+            headers={
+                "Title": "🚨 ALERTA DE STOCK",
+                "Priority": "5",
+                "Tags": "warning,loud_sound"
+            },
+            timeout=5 
+        )
+        if response.status_code == 200:
+            st.toast("✅ Notificación enviada al servidor")
+        else:
+            st.error(f"❌ Error del servidor ntfy: {response.status_code}")
+    except Exception as e:
+        st.error(f"❌ Error de conexión: {e}")

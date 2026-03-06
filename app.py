@@ -16,8 +16,9 @@ def cargar_datos():
         df_raw = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
         if "Aviso_Dias" not in df_raw.columns:
             df_raw["Aviso_Dias"] = 7
+        
+        # CORRECCIÓN DE LECTURA: Aseguramos que interprete el día primero (DD/MM/YYYY)
         for col in ['Produccion', 'Vencimiento']:
-            # Forzamos lectura DD/MM/YYYY para evitar el cruce de fechas
             df_raw[col] = pd.to_datetime(df_raw[col], dayfirst=True, errors='coerce')
         return df_raw
     except Exception:
@@ -28,7 +29,6 @@ df = cargar_datos()
 # --- FUNCIÓN DE NOTIFICACIÓN (MEJORADA PARA QUE SUENE) ---
 def enviar_notificacion_externa(mensaje, canal):
     try:
-        # Se agrega Priority: 5 (Máxima) y Tags para forzar el sonido en el móvil
         requests.post(f"https://ntfy.sh/{canal}", 
                       data=mensaje.encode('utf-8'),
                       headers={
@@ -69,9 +69,11 @@ if st.sidebar.button("💾 Guardar Nuevo"):
             "Aviso_Dias": dias_propio
         }])
         df_save = pd.concat([df, nueva_fila], ignore_index=True)
-        # Aseguramos formato texto DD/MM/YYYY al guardar
+        
+        # CORRECCIÓN AL GUARDAR: Forzamos el formato texto DD/MM/YYYY
         df_save['Produccion'] = pd.to_datetime(df_save['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
         df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
+        
         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
         st.sidebar.success("¡Registrado correctamente!")
         st.rerun()
@@ -108,6 +110,8 @@ if not df.empty:
     df_filtrado = df[df['Nombre/Codigo'].str.lower().str.contains(busqueda, na=False)].copy()
     st.divider()
     st.subheader("⏳ Top 10 Próximos Vencimientos")
+    
+    # CORRECCIÓN EN TABLA: Ordenar y luego formatear para evitar errores de visualización
     df_venc = df_filtrado.sort_values(by="Vencimiento").head(10).copy()
     df_venc['Produccion'] = df_venc['Produccion'].dt.strftime('%d/%m/%Y')
     df_venc['Vencimiento'] = df_venc['Vencimiento'].dt.strftime('%d/%m/%Y')
@@ -139,6 +143,7 @@ if not df.empty:
                 df.at[idx, 'Vencimiento'] = n_v
                 df.at[idx, 'Aviso_Dias'] = n_a
                 df_u = df.copy()
+                # CORRECCIÓN AL ACTUALIZAR: Asegurar formato DD/MM/YYYY
                 df_u['Produccion'] = pd.to_datetime(df_u['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 df_u['Vencimiento'] = pd.to_datetime(df_u['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_u)
@@ -146,6 +151,7 @@ if not df.empty:
     with c2:
         if st.button(f"Borrar {prod_sel}", type="primary"):
             df_f = df[df['Nombre/Codigo'] != prod_sel].copy()
+            # CORRECCIÓN AL BORRAR: Mantener integridad de formato
             df_f['Produccion'] = pd.to_datetime(df_f['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
             df_f['Vencimiento'] = pd.to_datetime(df_f['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
             conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_f)

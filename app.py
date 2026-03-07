@@ -101,3 +101,4 @@ if not df.empty:
             df_f = df[df['Nombre/Codigo'] != prod_sel]
             conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_f)
             st.rerun()
+

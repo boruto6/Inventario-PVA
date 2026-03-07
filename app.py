@@ -7,27 +7,25 @@ import requests
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="wide")
 
-# --- CSS MEJORADO PARA MODO OSCURO ---
+# --- CSS PARA VISIBILIDAD EN MODO OSCURO ---
 st.markdown("""
     <style>
-    /* Forzamos el color de la tarjeta y el texto */
-    .card {
-        padding: 15px;
-        border-radius: 10px;
-        margin-bottom: 10px;
-        border: 1px solid #555;
-    }
-    .t-blanco { color: white !important; }
-    .t-negro { color: #1a1a1a !important; }
-    
-    /* Colores intensos para que se vean en fondo negro o blanco */
+    .card { padding: 15px; border-radius: 10px; margin-bottom: 10px; border: 1px solid #555; }
+    .t-blanco { color: #FFFFFF !important; font-weight: bold !important; }
     .bg-rojo { background-color: #d32f2f; }
     .bg-naranja { background-color: #f57c00; }
     .bg-verde { background-color: #388e3c; }
+    .seccion-alerta { 
+        background-color: rgba(255, 255, 255, 0.05); 
+        padding: 20px; 
+        border-radius: 10px; 
+        border: 1px dashed #888;
+        margin-top: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- CONEXIÓN ---
+# --- CONEXIÓN A DATOS ---
 url = "https://docs.google.com/spreadsheets/d/1i-P14r4Avk21vuLfqskBKcoj_fgscPYTczrn-8w8C08/edit?usp=sharing"
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -43,9 +41,18 @@ def cargar_datos():
 
 df = cargar_datos()
 
+# --- FUNCIÓN DE NOTIFICACIÓN ---
+def enviar_notificacion_externa(mensaje, canal):
+    if not canal: return False
+    try:
+        headers = {"Title": "Alerta de Inventario", "Priority": "high", "Tags": "warning"}
+        response = requests.post(f"https://ntfy.sh/{canal}", data=mensaje.encode('utf-8'), headers=headers, timeout=10)
+        return response.status_code == 200
+    except: return False
+
 # --- BARRA LATERAL ---
 with st.sidebar:
-    st.header("⚙️ Registro")
+    st.header("⚙️ Configuración")
     canal_notif = st.text_input("Canal ntfy:", "mi_inventario_privado_123")
     
     if "camara_on" not in st.session_state: st.session_state.camara_on = False
@@ -56,104 +63,90 @@ with st.sidebar:
         st.camera_input("Captura", key="cam")
 
     st.divider()
-    with st.expander("➕ Añadir Producto", expanded=True):
-        n_nombre = st.text_input("Nombre")
-        n_venc = st.date_input("Vencimiento", datetime.now() + timedelta(days=30))
-        n_aviso = st.slider("Días aviso", 1, 30, 7)
-        if st.button("💾 Guardar Nuevo"):
+    with st.expander("➕ Nuevo Producto", expanded=False):
+        n_nombre = st.text_input("Nombre:")
+        n_venc = st.date_input("Vencimiento:", datetime.now() + timedelta(days=30))
+        n_aviso = st.slider("Días de aviso:", 1, 30, 7)
+        if st.button("💾 Guardar"):
             if n_nombre:
                 nueva_fila = pd.DataFrame([{"Nombre/Codigo": n_nombre, "Produccion": datetime.now().strftime('%d/%m/%Y'), "Vencimiento": n_venc.strftime('%d/%m/%Y'), "Aviso_Dias": n_aviso}])
                 df_save = pd.concat([df, nueva_fila], ignore_index=True)
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
-                st.success("¡Hecho!")
+                st.success("¡Guardado!")
                 st.rerun()
 
 # --- PANEL PRINCIPAL ---
-st.title("🍎 Mi Inventario Inteligente")
+st.title("🍎 Control de Inventario")
 
 if not df.empty:
     hoy = datetime.now().date()
     df['Dias_Restantes'] = df['Vencimiento'].dt.date.apply(lambda x: (x - hoy).days if pd.notnull(x) else 999)
     df['Indice_Urgencia'] = df['Dias_Restantes'] - df['Aviso_Dias']
     
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Total", len(df))
-    col2.metric("Vencidos", len(df[df['Dias_Restantes'] < 0]))
-    col3.metric("Urgentes", len(df[df['Indice_Urgencia'] <= 0]))
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total", len(df))
+    c2.metric("Vencidos", len(df[df['Dias_Restantes'] < 0]))
+    c3.metric("Urgentes", len(df[df['Indice_Urgencia'] <= 0]))
 
-    tab1, tab2, tab3 = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
+    st.divider()
 
-    with tab1:
-        df_prioridad = df.sort_values("Indice_Urgencia")
-        for _, row in df_prioridad.iterrows():
-            if row['Dias_Restantes'] < 0:
-                bg, emoji = "bg-rojo", "🚫"
-            elif row['Indice_Urgencia'] <= 0:
-                bg = "bg-naranja"; emoji = "⚠️"
-            else:
-                bg = "bg-verde"; emoji = "✅"
+    # --- PESTAÑAS (Solo 3) ---
+    tab_p, tab_b, tab_g = st.tabs(["Prioridad", "Buscador", "Gestión"])
 
+    with tab_p:
+        df_p = df.sort_values("Indice_Urgencia")
+        for _, r in df_p.iterrows():
+            bg = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
             st.markdown(f"""
                 <div class="card {bg}">
-                    <h3 class="t-blanco" style="margin:0;">{emoji} {row['Nombre/Codigo']}</h3>
-                    <p class="t-blanco" style="margin:0; opacity: 0.9;">
-                        <b>Urgencia: {row['Indice_Urgencia']}</b> | Faltan: {row['Dias_Restantes']} días<br>
-                        Vence: {row['Vencimiento'].strftime('%d/%m/%Y')}
-                    </p>
+                    <div class="t-blanco" style="font-size: 1.2rem;">{r['Nombre/Codigo']}</div>
+                    <div class="t-blanco" style="font-size: 0.9rem; opacity: 0.9;">
+                        Urgencia: {r['Indice_Urgencia']} | Faltan: {r['Dias_Restantes']} días
+                    </div>
                 </div>
             """, unsafe_allow_html=True)
 
-    with tab2:
-        busq = st.text_input("Filtrar por nombre...")
-        df_f = df[df['Nombre/Codigo'].str.lower().str.contains(busq.lower())]
+    with tab_b:
+        b = st.text_input("Buscar producto...")
+        df_f = df[df['Nombre/Codigo'].str.lower().str.contains(b.lower())]
         st.dataframe(df_f, use_container_width=True)
 
-    with tab3:
-        st.subheader("🛠️ Modificar Producto")
-        opciones = df['Nombre/Codigo'].tolist()
-        prod_sel = st.selectbox("Selecciona para editar o eliminar:", opciones)
+    with tab_g:
+        st.subheader("🛠️ Editar o Eliminar")
+        p_sel = st.selectbox("Seleccione producto:", df['Nombre/Codigo'].tolist())
         
-        if prod_sel:
-            idx = df[df['Nombre/Codigo'] == prod_sel].index[0]
+        if p_sel:
+            idx = df[df['Nombre/Codigo'] == p_sel].index[0]
+            with st.form("f_edit_final"):
+                en = st.text_input("Nombre", value=df.at[idx, 'Nombre/Codigo'])
+                ev = st.date_input("Vencimiento", value=df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now())
+                ea = st.slider("Aviso (días)", 1, 30, int(df.at[idx, 'Aviso_Dias']))
+                if st.form_submit_button("✅ Actualizar"):
+                    df.at[idx, 'Nombre/Codigo'], df.at[idx, 'Vencimiento'], df.at[idx, 'Aviso_Dias'] = en, pd.to_datetime(ev), ea
+                    df_u = df.copy()
+                    df_u['Produccion'] = df_u['Produccion'].dt.strftime('%d/%m/%Y')
+                    df_u['Vencimiento'] = df_u['Vencimiento'].dt.strftime('%d/%m/%Y')
+                    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_u)
+                    st.rerun()
             
-            with st.form("edit_form"):
-                col_e1, col_e2 = st.columns(2)
-                with col_e1:
-                    edit_nombre = st.text_input("Nombre", value=df.at[idx, 'Nombre/Codigo'])
-                    # Manejo de fecha para evitar errores si es nula
-                    fecha_val = df.at[idx, 'Vencimiento'] if pd.notnull(df.at[idx, 'Vencimiento']) else datetime.now()
-                    edit_venc = st.date_input("Vencimiento", value=fecha_val)
-                with col_e2:
-                    edit_aviso = st.slider("Días de aviso", 1, 30, int(df.at[idx, 'Aviso_Dias']))
-                
-                c_bt1, c_bt2 = st.columns(2)
-                with c_bt1:
-                    if st.form_submit_button("✅ Guardar Cambios"):
-                        df.at[idx, 'Nombre/Codigo'] = edit_nombre
-                        df.at[idx, 'Vencimiento'] = pd.to_datetime(edit_venc)
-                        df.at[idx, 'Aviso_Dias'] = edit_aviso
-                        # Preparar para guardar (convertir a texto para Sheets)
-                        df_u = df.copy()
-                        df_u['Produccion'] = df_u['Produccion'].dt.strftime('%d/%m/%Y')
-                        df_u['Vencimiento'] = df_u['Vencimiento'].dt.strftime('%d/%m/%Y')
-                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_u)
-                        st.success("¡Actualizado!")
-                        st.rerun()
-                with c_bt2:
-                    # El botón de borrar lo ponemos fuera del form de edición para mayor seguridad
-                    pass
-            
-            if st.button(f"🗑️ Eliminar permanentemente {prod_sel}", type="primary"):
-                df_f = df[df['Nombre/Codigo'] != prod_sel].copy()
-                df_f['Produccion'] = df_f['Produccion'].dt.strftime('%d/%m/%Y')
-                df_f['Vencimiento'] = df_f['Vencimiento'].dt.strftime('%d/%m/%Y')
-                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_f)
+            if st.button("🗑️ Eliminar Producto", type="primary"):
+                df_d = df[df['Nombre/Codigo'] != p_sel]
+                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_d)
                 st.rerun()
 
+        # --- SECCIÓN DE NOTIFICACIONES DENTRO DE GESTIÓN ---
+        st.markdown('<div class="seccion-alerta">', unsafe_allow_html=True)
+        st.subheader("🔔 Prueba de Alertas")
+        st.write(f"Configurado para el canal: `{canal_notif}`")
+        if st.button("🚀 Enviar Notificación de Prueba"):
+            if enviar_notificacion_externa("Prueba: Sistema de inventario funcionando correctamente.", canal_notif):
+                st.success("¡Notificación enviada! Revisa tu celular.")
+            else:
+                st.error("Error al enviar. Verifica el nombre del canal.")
+        st.markdown('</div>', unsafe_allow_html=True)
 
-
-
-
-
-
-
+# Alerta automática una vez por carga
+if not df.empty and "avisado" not in st.session_state:
+    if len(df[df['Indice_Urgencia'] <= 0]) > 0:
+        enviar_notificacion_externa("Atención: Tienes productos urgentes por retirar.", canal_notif)
+        st.session_state.avisado = True

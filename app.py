@@ -150,3 +150,4 @@ if not df.empty:
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_f)
                 st.rerun()
 
+

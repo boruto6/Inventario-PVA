@@ -91,3 +91,4 @@ for _, row in df_priorizado.iterrows():
             </span>
         </div>
     """, unsafe_allow_html=True)
+

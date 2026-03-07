@@ -149,3 +149,4 @@ if not df.empty:
                 df_f['Vencimiento'] = df_f['Vencimiento'].dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_f)
                 st.rerun()
+

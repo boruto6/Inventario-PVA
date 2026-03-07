@@ -94,3 +94,4 @@ for _, row in df_priorizado.iterrows():
 
 
 
+

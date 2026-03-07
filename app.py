@@ -91,7 +91,7 @@ if not df.empty:
     st.divider()
 
     # --- PESTAÑAS (Solo 3) ---
-    tab_p, tab_b, tab_g = st.tabs(["Prioridad", "Buscador", "Gestión"])
+    tab_p, tab_b, tab_g = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
 
     with tab_p:
         df_p = df.sort_values("Indice_Urgencia")
@@ -150,3 +150,4 @@ if not df.empty and "avisado" not in st.session_state:
     if len(df[df['Indice_Urgencia'] <= 0]) > 0:
         enviar_notificacion_externa("Atención: Tienes productos urgentes por retirar.", canal_notif)
         st.session_state.avisado = True
+

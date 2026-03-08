@@ -7,7 +7,7 @@ import requests
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="wide")
 
-# --- CSS AJUSTADO PARA ICONOS DENTRO DE LA TARJETA Y BOTONES LATERALES ---
+# --- CSS AJUSTADO ---
 st.markdown("""
     <style>
     .card-container {
@@ -24,11 +24,6 @@ st.markdown("""
     .bg-naranja { background-color: #f57c00; }
     .bg-verde { background-color: #388e3c; }
     
-    /* Botones tipo icono horizontales dentro de la tarjeta */
-    .icon-btn-container {
-        display: flex;
-        gap: 5px;
-    }
     .stButton > button {
         background-color: rgba(255,255,255,0.2) !important;
         color: white !important;
@@ -39,7 +34,6 @@ st.markdown("""
         min-width: 40px !important;
     }
     
-    /* Ajuste para los botones de la barra lateral (que no se corte el texto) */
     [data-testid="stSidebar"] .stButton > button {
         width: 100% !important;
         height: auto !important;
@@ -58,6 +52,7 @@ def cargar_datos():
     try:
         df_raw = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
         df_raw["Aviso_Dias"] = pd.to_numeric(df_raw["Aviso_Dias"], errors='coerce').fillna(7).astype(int)
+        # CORRECCIÓN DE FECHAS AL CARGAR: Forzar formato dia/mes/año y quitar horas
         for col in ['Produccion', 'Vencimiento']:
             df_raw[col] = pd.to_datetime(df_raw[col], dayfirst=True, errors='coerce')
         return df_raw
@@ -90,7 +85,8 @@ with st.sidebar:
     st.divider()
     with st.expander("➕ AÑADIR NUEVO PRODUCTO", expanded=True):
         n_nombre = st.text_input("Nombre del producto")
-        n_venc = st.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30))
+        # FECHA DIA/MES/AÑO EN EL INPUT
+        n_venc = st.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30), format="DD/MM/YYYY")
         n_aviso = st.slider("Días de aviso previo", 1, 30, 7)
         if st.button("💾 Guardar en Inventario", key="save_sidebar"):
             if n_nombre:
@@ -101,6 +97,9 @@ with st.sidebar:
                     "Aviso_Dias": n_aviso
                 }])
                 df_save = pd.concat([df, nueva_fila], ignore_index=True)
+                # Formatear todo el DF antes de subir para asegurar DD/MM/YYYY
+                df_save['Produccion'] = pd.to_datetime(df_save['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
+                df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
                 st.success("¡Producto Guardado!")
                 st.rerun()
@@ -127,20 +126,20 @@ if not df.empty:
         for idx, r in df_p.iterrows():
             color_class = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
             
-            # Contenedor visual de la tarjeta
+            # FECHA FORMATEADA PARA LA TARJETA
+            fecha_venc_str = r['Vencimiento'].strftime('%d/%m/%Y') if pd.notnull(r['Vencimiento']) else "Sin fecha"
+            
             st.markdown(f"""
                 <div class="card-container {color_class}">
                     <div>
                         <p class="t-blanco" style="font-size: 1.1rem;">{r['Nombre/Codigo']}</p>
-                        <p class="t-blanco" style="font-size: 0.85rem; opacity: 0.9;">Urgencia: {r['Indice_Urgencia']} | Faltan: {r['Dias_Restantes']} días</p>
+                        <p class="t-blanco" style="font-size: 0.85rem; opacity: 0.9;">Vence: {fecha_venc_str} | Faltan: {r['Dias_Restantes']} días</p>
                     </div>
                 </div>
             """, unsafe_allow_html=True)
             
-            # Botones flotantes sobre la tarjeta (usando columnas negativas para alinearlos arriba)
             col_spacer, col_btns = st.columns([3, 1])
             with col_btns:
-                # Contenedor horizontal para los botones
                 c_v, c_t, c_e = st.columns(3)
                 with c_v:
                     if st.button("✅", key=f"v_{idx}"):
@@ -162,7 +161,7 @@ if not df.empty:
             if edit_mode:
                 with st.expander(f"✏️ Editando: {r['Nombre/Codigo']}", expanded=True):
                     en = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"en_{idx}")
-                    ev = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"ev_{idx}")
+                    ev = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"ev_{idx}", format="DD/MM/YYYY")
                     ea = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"ea_{idx}")
                     if st.button("Guardar Cambios", key=f"s_{idx}"):
                         df.at[idx, 'Nombre/Codigo'] = en
@@ -176,7 +175,11 @@ if not df.empty:
 
     with tab_b:
         busq = st.text_input("Buscar producto...")
-        df_f = df[df['Nombre/Codigo'].str.lower().str.contains(busq.lower())]
+        df_f = df[df['Nombre/Codigo'].str.lower().str.contains(busq.lower())].copy()
+        # Formatear visualmente el buscador también
+        if not df_f.empty:
+            df_f['Produccion'] = df_f['Produccion'].dt.strftime('%d/%m/%Y')
+            df_f['Vencimiento'] = df_f['Vencimiento'].dt.strftime('%d/%m/%Y')
         st.dataframe(df_f, use_container_width=True)
 
     with tab_g:
@@ -186,7 +189,7 @@ if not df.empty:
             idx_g = df[df['Nombre/Codigo'] == p_sel].index[0]
             with st.form("form_gestion"):
                 st.text_input("Nombre", value=df.at[idx_g, 'Nombre/Codigo'], key="gn")
-                st.date_input("Vencimiento", value=df.at[idx_g, 'Vencimiento'], key="gv")
+                st.date_input("Vencimiento", value=df.at[idx_g, 'Vencimiento'], key="gv", format="DD/MM/YYYY")
                 if st.form_submit_button("Actualizar"):
                     st.info("Utilice el lápiz ✏️ en la pestaña Prioridad para cambios rápidos.")
             

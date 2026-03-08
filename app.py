@@ -151,23 +151,29 @@ if not df.empty:
                         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
                         st.rerun()
                 with c_e:
+                    # Usamos session_state para controlar qué expander está abierto
                     edit_mode = st.button("✏️", key=f"e_{idx}")
 
-            if edit_mode:
+            if edit_mode or st.session_state.get(f"open_{idx}", False):
+                st.session_state[f"open_{idx}"] = True
                 with st.expander(f"✏️ Editando: {r['Nombre/Codigo']}", expanded=True):
-                    # CORRECCIÓN 1: Claves únicas para los inputs del lápiz
-                    en = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"input_n_{idx}")
-                    ev = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"input_v_{idx}", format="DD/MM/YYYY")
-                    ea = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"input_a_{idx}")
-                    if st.button("Guardar Cambios", key=f"btn_save_edit_{idx}"):
-                        df.at[idx, 'Nombre/Codigo'] = en
-                        df.at[idx, 'Vencimiento'] = pd.to_datetime(ev)
-                        df.at[idx, 'Aviso_Dias'] = ea
+                    en_val = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"in_n_{idx}")
+                    ev_val = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"in_v_{idx}", format="DD/MM/YYYY")
+                    ea_val = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"in_a_{idx}")
+                    
+                    col_save, col_cancel = st.columns(2)
+                    if col_save.button("Guardar Cambios", key=f"bs_{idx}"):
+                        df.at[idx, 'Nombre/Codigo'] = en_val
+                        df.at[idx, 'Vencimiento'] = pd.to_datetime(ev_val)
+                        df.at[idx, 'Aviso_Dias'] = ea_val
                         df_s = df.copy()
                         df_s['Produccion'] = df_s['Produccion'].dt.strftime('%d/%m/%Y')
                         df_s['Vencimiento'] = df_s['Vencimiento'].dt.strftime('%d/%m/%Y')
                         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_s)
-                        st.success("¡Cambios guardados!")
+                        st.session_state[f"open_{idx}"] = False
+                        st.rerun()
+                    if col_cancel.button("Cerrar", key=f"bc_{idx}"):
+                        st.session_state[f"open_{idx}"] = False
                         st.rerun()
 
     with tab_b:
@@ -180,28 +186,32 @@ if not df.empty:
 
     with tab_g:
         st.subheader("🛠️ Gestión y Notificaciones")
-        p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key="select_gestion_main")
+        # CORRECCIÓN GESTIÓN: Aseguramos que el selectbox cargue los datos correctamente
+        p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key="sel_g_main")
+        
         if p_sel:
-            idx_g = df[df['Nombre/Codigo'] == p_sel].index[0]
-            # CORRECCIÓN 2: Lógica de guardado en la pestaña Gestión activada
-            with st.form("form_gestion_completa"):
-                gn_val = st.text_input("Nombre", value=df.at[idx_g, 'Nombre/Codigo'], key="gn_form")
-                gv_val = st.date_input("Vencimiento", value=df.at[idx_g, 'Vencimiento'], key="gv_form", format="DD/MM/YYYY")
-                ga_val = st.slider("Días Aviso", 1, 30, int(df.at[idx_g, 'Aviso_Dias']), key="ga_form")
+            # Obtener datos frescos del producto seleccionado
+            producto_data = df[df['Nombre/Codigo'] == p_sel].iloc[0]
+            idx_g = producto_data.name
+            
+            with st.form("form_g_v2"):
+                gn_g = st.text_input("Nombre", value=producto_data['Nombre/Codigo'])
+                gv_g = st.date_input("Vencimiento", value=producto_data['Vencimiento'], format="DD/MM/YYYY")
+                ga_g = st.slider("Días Aviso", 1, 30, int(producto_data['Aviso_Dias']))
                 
                 if st.form_submit_button("Actualizar Producto"):
-                    df.at[idx_g, 'Nombre/Codigo'] = gn_val
-                    df.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_val)
-                    df.at[idx_g, 'Aviso_Dias'] = ga_val
+                    df.at[idx_g, 'Nombre/Codigo'] = gn_g
+                    df.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_g)
+                    df.at[idx_g, 'Aviso_Dias'] = ga_g
                     df_up = df.copy()
                     df_up['Produccion'] = df_up['Produccion'].dt.strftime('%d/%m/%Y')
                     df_up['Vencimiento'] = df_up['Vencimiento'].dt.strftime('%d/%m/%Y')
                     conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_up)
-                    st.success("¡Producto actualizado desde Gestión!")
+                    st.success("¡Actualizado con éxito!")
                     st.rerun()
             
-            if st.button("🗑️ Eliminar Definitivamente", type="primary", key="btn_del_gestion"):
-                df_d = df[df['Nombre/Codigo'] != p_sel]
+            if st.button("🗑️ Eliminar Definitivamente", type="primary", key="del_g_final"):
+                df_d = df.drop(idx_g)
                 df_d['Produccion'] = df_d['Produccion'].dt.strftime('%d/%m/%Y')
                 df_d['Vencimiento'] = df_d['Vencimiento'].dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_d)
@@ -209,6 +219,6 @@ if not df.empty:
 
         st.divider()
         st.subheader("🔔 Centro de Alertas")
-        if st.button("🚀 Enviar Prueba al Celular", key="btn_notif_test"):
+        if st.button("🚀 Enviar Prueba al Celular", key="test_notif_g"):
             enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
             st.success("Enviado.")

@@ -185,18 +185,26 @@ if not df.empty:
 
     with tab_g:
         st.subheader("🛠️ Gestión y Notificaciones")
-        p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key="sel_g_main")
+        
+        # Obtenemos la lista de nombres para el selector
+        nombres_productos = df['Nombre/Codigo'].tolist()
+        p_sel = st.selectbox("Seleccione para modificar:", nombres_productos, key="sel_g_main")
         
         if p_sel:
+            # Localizar los datos del producto seleccionado
             producto_data = df[df['Nombre/Codigo'] == p_sel].iloc[0]
             idx_g = producto_data.name
             
-            with st.form("form_g_v2"):
+            # Formulario de Edición
+            with st.form("form_gestion_detallada"):
                 gn_g = st.text_input("Nombre", value=producto_data['Nombre/Codigo'])
                 gv_g = st.date_input("Vencimiento", value=producto_data['Vencimiento'], format="DD/MM/YYYY")
                 ga_g = st.slider("Días Aviso", 1, 30, int(producto_data['Aviso_Dias']))
                 
-                if st.form_submit_button("Actualizar Producto"):
+                # El botón de envío DEBE estar dentro del 'with st.form'
+                submit_update = st.form_submit_button("Actualizar Producto")
+                
+                if submit_update:
                     df.at[idx_g, 'Nombre/Codigo'] = gn_g
                     df.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_g)
                     df.at[idx_g, 'Aviso_Dias'] = ga_g
@@ -207,12 +215,20 @@ if not df.empty:
                     st.success("¡Actualizado con éxito!")
                     st.rerun()
             
+            # Botón de eliminación (Fuera del formulario por seguridad y diseño)
+            st.write("---")
             if st.button("🗑️ Eliminar Definitivamente", type="primary", key="del_g_final"):
                 df_d = df.drop(idx_g)
                 df_d['Produccion'] = df_d['Produccion'].dt.strftime('%d/%m/%Y')
                 df_d['Vencimiento'] = df_d['Vencimiento'].dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_d)
                 st.rerun()
+
+        st.divider()
+        st.subheader("🔔 Centro de Alertas")
+        if st.button("🚀 Enviar Prueba al Celular", key="test_notif_g"):
+            enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
+            st.success("Enviado.")
 
         st.divider()
         st.subheader("🔔 Centro de Alertas")
@@ -232,3 +248,4 @@ if not df.empty:
         mensaje_auto = f"Atención: {len(urgentes)} productos necesitan revisión: {nombres_urgentes}"
         if enviar_notificacion_externa(mensaje_auto, canal_notif):
             st.session_state.ultima_notif = datetime.now().date()
+

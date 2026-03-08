@@ -33,14 +33,6 @@ st.markdown("""
         height: 35px !important;
         min-width: 40px !important;
     }
-    
-    [data-testid="stSidebar"] .stButton > button {
-        width: 100% !important;
-        height: auto !important;
-        padding: 10px !important;
-        white-space: normal !important;
-        line-height: 1.2 !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -116,39 +108,5 @@ if not df.empty:
 
     st.divider()
 
-    tab_p, tab_b, tab_g = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
-
-    with tab_p:
-        df_p = df.sort_values("Indice_Urgencia")
-        for idx, r in df_p.iterrows():
-            color_class = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
-            fecha_venc_str = r['Vencimiento'].strftime('%d/%m/%Y') if pd.notnull(r['Vencimiento']) else "Sin fecha"
-            
-            st.markdown(f"""
-                <div class="card-container {color_class}">
-                    <div>
-                        <p class="t-blanco" style="font-size: 1.1rem;">{r['Nombre/Codigo']}</p>
-                        <p class="t-blanco" style="font-size: 0.85rem; opacity: 0.9;">Vence: {fecha_venc_str} | Faltan: {r['Dias_Restantes']} días</p>
-                    </div>
-                </div>
-            """, unsafe_allow_html=True)
-            
-            col_spacer, col_btns = st.columns([3, 1])
-            with col_btns:
-                c_v, c_t, c_e = st.columns(3)
-                with c_v:
-                    if st.button("✅", key=f"v_{idx}"):
-                        df_res = df.drop(idx)
-                        df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
-                        df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
-                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
-                        st.rerun()
-                with c_t:
-                    if st.button("🗑️", key=f"t_{idx}"):
-                        df_res = df.drop(idx)
-                        df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
-                        df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
-                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
-                        st.rerun()
-                with c_e:
-                    edit_mode = st.button("✏️", key=f"e_{idx}")
+    # Pestañas
+    tab_p, tab_b

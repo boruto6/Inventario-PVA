@@ -7,7 +7,7 @@ import requests
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="wide")
 
-# --- CSS AJUSTADO ---
+# --- CSS MANTENIDO ---
 st.markdown("""
     <style>
     .card-container {
@@ -52,7 +52,6 @@ def cargar_datos():
     try:
         df_raw = conn.read(spreadsheet=url, worksheet="Hoja 1", ttl=0)
         df_raw["Aviso_Dias"] = pd.to_numeric(df_raw["Aviso_Dias"], errors='coerce').fillna(7).astype(int)
-        # CORRECCIÓN DE FECHAS AL CARGAR: Forzar formato dia/mes/año y quitar horas
         for col in ['Produccion', 'Vencimiento']:
             df_raw[col] = pd.to_datetime(df_raw[col], dayfirst=True, errors='coerce')
         return df_raw
@@ -85,7 +84,6 @@ with st.sidebar:
     st.divider()
     with st.expander("➕ AÑADIR NUEVO PRODUCTO", expanded=True):
         n_nombre = st.text_input("Nombre del producto")
-        # FECHA DIA/MES/AÑO EN EL INPUT
         n_venc = st.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30), format="DD/MM/YYYY")
         n_aviso = st.slider("Días de aviso previo", 1, 30, 7)
         if st.button("💾 Guardar en Inventario", key="save_sidebar"):
@@ -97,7 +95,6 @@ with st.sidebar:
                     "Aviso_Dias": n_aviso
                 }])
                 df_save = pd.concat([df, nueva_fila], ignore_index=True)
-                # Formatear todo el DF antes de subir para asegurar DD/MM/YYYY
                 df_save['Produccion'] = pd.to_datetime(df_save['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
@@ -125,8 +122,6 @@ if not df.empty:
         df_p = df.sort_values("Indice_Urgencia")
         for idx, r in df_p.iterrows():
             color_class = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
-            
-            # FECHA FORMATEADA PARA LA TARJETA
             fecha_venc_str = r['Vencimiento'].strftime('%d/%m/%Y') if pd.notnull(r['Vencimiento']) else "Sin fecha"
             
             st.markdown(f"""
@@ -160,10 +155,11 @@ if not df.empty:
 
             if edit_mode:
                 with st.expander(f"✏️ Editando: {r['Nombre/Codigo']}", expanded=True):
-                    en = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"en_{idx}")
-                    ev = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"ev_{idx}", format="DD/MM/YYYY")
-                    ea = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"ea_{idx}")
-                    if st.button("Guardar Cambios", key=f"s_{idx}"):
+                    # CORRECCIÓN 1: Claves únicas para los inputs del lápiz
+                    en = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"input_n_{idx}")
+                    ev = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"input_v_{idx}", format="DD/MM/YYYY")
+                    ea = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"input_a_{idx}")
+                    if st.button("Guardar Cambios", key=f"btn_save_edit_{idx}"):
                         df.at[idx, 'Nombre/Codigo'] = en
                         df.at[idx, 'Vencimiento'] = pd.to_datetime(ev)
                         df.at[idx, 'Aviso_Dias'] = ea
@@ -171,12 +167,12 @@ if not df.empty:
                         df_s['Produccion'] = df_s['Produccion'].dt.strftime('%d/%m/%Y')
                         df_s['Vencimiento'] = df_s['Vencimiento'].dt.strftime('%d/%m/%Y')
                         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_s)
+                        st.success("¡Cambios guardados!")
                         st.rerun()
 
     with tab_b:
         busq = st.text_input("Buscar producto...")
         df_f = df[df['Nombre/Codigo'].str.lower().str.contains(busq.lower())].copy()
-        # Formatear visualmente el buscador también
         if not df_f.empty:
             df_f['Produccion'] = df_f['Produccion'].dt.strftime('%d/%m/%Y')
             df_f['Vencimiento'] = df_f['Vencimiento'].dt.strftime('%d/%m/%Y')
@@ -184,16 +180,27 @@ if not df.empty:
 
     with tab_g:
         st.subheader("🛠️ Gestión y Notificaciones")
-        p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist())
+        p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key="select_gestion_main")
         if p_sel:
             idx_g = df[df['Nombre/Codigo'] == p_sel].index[0]
-            with st.form("form_gestion"):
-                st.text_input("Nombre", value=df.at[idx_g, 'Nombre/Codigo'], key="gn")
-                st.date_input("Vencimiento", value=df.at[idx_g, 'Vencimiento'], key="gv", format="DD/MM/YYYY")
-                if st.form_submit_button("Actualizar"):
-                    st.info("Utilice el lápiz ✏️ en la pestaña Prioridad para cambios rápidos.")
+            # CORRECCIÓN 2: Lógica de guardado en la pestaña Gestión activada
+            with st.form("form_gestion_completa"):
+                gn_val = st.text_input("Nombre", value=df.at[idx_g, 'Nombre/Codigo'], key="gn_form")
+                gv_val = st.date_input("Vencimiento", value=df.at[idx_g, 'Vencimiento'], key="gv_form", format="DD/MM/YYYY")
+                ga_val = st.slider("Días Aviso", 1, 30, int(df.at[idx_g, 'Aviso_Dias']), key="ga_form")
+                
+                if st.form_submit_button("Actualizar Producto"):
+                    df.at[idx_g, 'Nombre/Codigo'] = gn_val
+                    df.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_val)
+                    df.at[idx_g, 'Aviso_Dias'] = ga_val
+                    df_up = df.copy()
+                    df_up['Produccion'] = df_up['Produccion'].dt.strftime('%d/%m/%Y')
+                    df_up['Vencimiento'] = df_up['Vencimiento'].dt.strftime('%d/%m/%Y')
+                    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_up)
+                    st.success("¡Producto actualizado desde Gestión!")
+                    st.rerun()
             
-            if st.button("🗑️ Eliminar Definitivamente", type="primary"):
+            if st.button("🗑️ Eliminar Definitivamente", type="primary", key="btn_del_gestion"):
                 df_d = df[df['Nombre/Codigo'] != p_sel]
                 df_d['Produccion'] = df_d['Produccion'].dt.strftime('%d/%m/%Y')
                 df_d['Vencimiento'] = df_d['Vencimiento'].dt.strftime('%d/%m/%Y')
@@ -202,6 +209,6 @@ if not df.empty:
 
         st.divider()
         st.subheader("🔔 Centro de Alertas")
-        if st.button("🚀 Enviar Prueba al Celular"):
+        if st.button("🚀 Enviar Prueba al Celular", key="btn_notif_test"):
             enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
             st.success("Enviado.")

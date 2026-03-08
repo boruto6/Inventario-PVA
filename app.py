@@ -151,7 +151,6 @@ if not df.empty:
                         conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
                         st.rerun()
                 with c_e:
-                    # Usamos session_state para controlar qué expander está abierto
                     edit_mode = st.button("✏️", key=f"e_{idx}")
 
             if edit_mode or st.session_state.get(f"open_{idx}", False):
@@ -186,11 +185,9 @@ if not df.empty:
 
     with tab_g:
         st.subheader("🛠️ Gestión y Notificaciones")
-        # CORRECCIÓN GESTIÓN: Aseguramos que el selectbox cargue los datos correctamente
         p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key="sel_g_main")
         
         if p_sel:
-            # Obtener datos frescos del producto seleccionado
             producto_data = df[df['Nombre/Codigo'] == p_sel].iloc[0]
             idx_g = producto_data.name
             
@@ -222,3 +219,16 @@ if not df.empty:
         if st.button("🚀 Enviar Prueba al Celular", key="test_notif_g"):
             enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
             st.success("Enviado.")
+
+    # --- LÓGICA DE NOTIFICACIÓN AUTOMÁTICA (RESTAURADA Y CORREGIDA) ---
+    if "ultima_notif" not in st.session_state:
+        st.session_state.ultima_notif = None
+
+    # Detectar si hay productos en amarillo (Indice <= 0) o rojo (Dias < 0)
+    urgentes = df[df['Indice_Urgencia'] <= 0]
+    
+    if len(urgentes) > 0 and st.session_state.ultima_notif != datetime.now().date():
+        nombres_urgentes = ", ".join(urgentes['Nombre/Codigo'].tolist())
+        mensaje_auto = f"Atención: {len(urgentes)} productos necesitan revisión: {nombres_urgentes}"
+        if enviar_notificacion_externa(mensaje_auto, canal_notif):
+            st.session_state.ultima_notif = datetime.now().date()

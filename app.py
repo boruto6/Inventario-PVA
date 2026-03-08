@@ -64,7 +64,7 @@ df = cargar_datos()
 def enviar_notificacion_externa(mensaje, canal):
     if not canal: return False
     try:
-        headers = {"Title": "Alerta de Inventario", "Priority": "high", "Tags": "warning"}
+        headers = {"Title": "Alerta de Inventario", "Priority": "high", "Tags": "warning,skull"}
         response = requests.post(f"https://ntfy.sh/{canal}", data=mensaje.encode('utf-8'), headers=headers, timeout=10)
         return response.status_code == 200
     except: return False
@@ -220,15 +220,23 @@ if not df.empty:
             enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
             st.success("Enviado.")
 
-    # --- LÓGICA DE NOTIFICACIÓN AUTOMÁTICA (RESTAURADA Y CORREGIDA) ---
+    # --- LÓGICA DE NOTIFICACIÓN AUTOMÁTICA MEJORADA (AMARILLOS Y ROJOS) ---
     if "ultima_notif" not in st.session_state:
         st.session_state.ultima_notif = None
 
-    # Detectar si hay productos en amarillo (Indice <= 0) o rojo (Dias < 0)
-    urgentes = df[df['Indice_Urgencia'] <= 0]
+    # Detectar productos vencidos (Rojo) y próximos a vencer (Amarillo)
+    vencidos = df[df['Dias_Restantes'] < 0]
+    proximos = df[(df['Indice_Urgencia'] <= 0) & (df['Dias_Restantes'] >= 0)]
     
-    if len(urgentes) > 0 and st.session_state.ultima_notif != datetime.now().date():
-        nombres_urgentes = ", ".join(urgentes['Nombre/Codigo'].tolist())
-        mensaje_auto = f"Atención: {len(urgentes)} productos necesitan revisión: {nombres_urgentes}"
-        if enviar_notificacion_externa(mensaje_auto, canal_notif):
+    # Solo enviar si hay novedades hoy
+    if (len(vencidos) > 0 or len(proximos) > 0) and st.session_state.ultima_notif != datetime.now().date():
+        mensaje_piezas = []
+        if len(vencidos) > 0:
+            mensaje_piezas.append(f"🔴 VENCIDOS ({len(vencidos)}): " + ", ".join(vencidos['Nombre/Codigo'].tolist()))
+        if len(proximos) > 0:
+            mensaje_piezas.append(f"🟡 POR VENCER ({len(proximos)}): " + ", ".join(proximos['Nombre/Codigo'].tolist()))
+        
+        mensaje_final = "⚠️ ALERTA DE INVENTARIO ⚠️\n" + "\n".join(mensaje_piezas)
+        
+        if enviar_notificacion_externa(mensaje_final, canal_notif):
             st.session_state.ultima_notif = datetime.now().date()

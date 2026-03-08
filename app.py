@@ -7,30 +7,45 @@ import requests
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="wide")
 
-# --- CSS AJUSTADO (Iconos y Tarjetas) ---
+# --- CSS AJUSTADO PARA ICONOS DENTRO DE LA TARJETA Y BOTONES LATERALES ---
 st.markdown("""
     <style>
-    .card { 
-        padding: 12px; 
-        border-radius: 10px; 
-        margin-bottom: 5px; 
+    .card-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 12px;
+        border-radius: 10px;
+        margin-bottom: 8px;
         border: 1px solid #555;
     }
-    .t-blanco { color: #FFFFFF !important; font-weight: bold !important; }
+    .t-blanco { color: #FFFFFF !important; font-weight: bold !important; margin: 0; }
     .bg-rojo { background-color: #d32f2f; }
     .bg-naranja { background-color: #f57c00; }
     .bg-verde { background-color: #388e3c; }
     
-    /* Estilo para botones pequeños y pegados */
+    /* Botones tipo icono horizontales dentro de la tarjeta */
+    .icon-btn-container {
+        display: flex;
+        gap: 5px;
+    }
     .stButton > button {
-        width: 45px !important;
-        height: 35px !important;
-        padding: 0px !important;
-        font-size: 18px !important;
         background-color: rgba(255,255,255,0.2) !important;
         color: white !important;
         border: 1px solid rgba(255,255,255,0.4) !important;
-        margin-top: 5px;
+        border-radius: 5px !important;
+        padding: 2px 8px !important;
+        height: 35px !important;
+        min-width: 40px !important;
+    }
+    
+    /* Ajuste para los botones de la barra lateral (que no se corte el texto) */
+    [data-testid="stSidebar"] .stButton > button {
+        width: 100% !important;
+        height: auto !important;
+        padding: 10px !important;
+        white-space: normal !important;
+        line-height: 1.2 !important;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -60,7 +75,7 @@ def enviar_notificacion_externa(mensaje, canal):
         return response.status_code == 200
     except: return False
 
-# --- BARRA LATERAL (Añadir productos y Cámara) ---
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Registro y Cámara")
     canal_notif = st.text_input("Canal ntfy:", "mi_inventario_privado_123")
@@ -73,12 +88,11 @@ with st.sidebar:
         st.camera_input("Captura", key="cam")
 
     st.divider()
-    # ESTA ES LA SECCIÓN QUE HABÍA DESAPARECIDO
     with st.expander("➕ AÑADIR NUEVO PRODUCTO", expanded=True):
         n_nombre = st.text_input("Nombre del producto")
         n_venc = st.date_input("Fecha Vencimiento", datetime.now() + timedelta(days=30))
         n_aviso = st.slider("Días de aviso previo", 1, 30, 7)
-        if st.button("💾 Guardar en Inventario"):
+        if st.button("💾 Guardar en Inventario", key="save_sidebar"):
             if n_nombre:
                 nueva_fila = pd.DataFrame([{
                     "Nombre/Codigo": n_nombre, 
@@ -111,43 +125,45 @@ if not df.empty:
     with tab_p:
         df_p = df.sort_values("Indice_Urgencia")
         for idx, r in df_p.iterrows():
-            bg = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
+            color_class = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
             
-            # Tarjeta con botones horizontales ajustados
-            col_info, col_v, col_t, col_e = st.columns([3, 0.4, 0.4, 0.4])
-            
-            with col_info:
-                st.markdown(f"""
-                    <div class="card {bg}">
-                        <div class="t-blanco" style="font-size: 1rem;">{r['Nombre/Codigo']}</div>
-                        <div class="t-blanco" style="font-size: 0.8rem; opacity: 0.9;">
-                            Faltan: {r['Dias_Restantes']} días
-                        </div>
+            # Contenedor visual de la tarjeta
+            st.markdown(f"""
+                <div class="card-container {color_class}">
+                    <div>
+                        <p class="t-blanco" style="font-size: 1.1rem;">{r['Nombre/Codigo']}</p>
+                        <p class="t-blanco" style="font-size: 0.85rem; opacity: 0.9;">Urgencia: {r['Indice_Urgencia']} | Faltan: {r['Dias_Restantes']} días</p>
                     </div>
-                """, unsafe_allow_html=True)
-
-            with col_v:
-                if st.button("✅", key=f"v_{idx}"):
-                    df_res = df.drop(idx)
-                    df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
-                    df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
-                    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
-                    st.rerun()
-            with col_t:
-                if st.button("🗑️", key=f"t_{idx}"):
-                    df_res = df.drop(idx)
-                    df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
-                    df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
-                    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
-                    st.rerun()
-            with col_e:
-                edit_mode = st.button("✏️", key=f"e_{idx}")
+                </div>
+            """, unsafe_allow_html=True)
+            
+            # Botones flotantes sobre la tarjeta (usando columnas negativas para alinearlos arriba)
+            col_spacer, col_btns = st.columns([3, 1])
+            with col_btns:
+                # Contenedor horizontal para los botones
+                c_v, c_t, c_e = st.columns(3)
+                with c_v:
+                    if st.button("✅", key=f"v_{idx}"):
+                        df_res = df.drop(idx)
+                        df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
+                        df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
+                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
+                        st.rerun()
+                with c_t:
+                    if st.button("🗑️", key=f"t_{idx}"):
+                        df_res = df.drop(idx)
+                        df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
+                        df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
+                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
+                        st.rerun()
+                with c_e:
+                    edit_mode = st.button("✏️", key=f"e_{idx}")
 
             if edit_mode:
                 with st.expander(f"✏️ Editando: {r['Nombre/Codigo']}", expanded=True):
-                    en = st.text_input("Nuevo Nombre", value=r['Nombre/Codigo'], key=f"en_{idx}")
-                    ev = st.date_input("Nuevo Vencimiento", value=r['Vencimiento'], key=f"ev_{idx}")
-                    ea = st.slider("Nuevo Aviso", 1, 30, int(r['Aviso_Dias']), key=f"ea_{idx}")
+                    en = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"en_{idx}")
+                    ev = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"ev_{idx}")
+                    ea = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"ea_{idx}")
                     if st.button("Guardar Cambios", key=f"s_{idx}"):
                         df.at[idx, 'Nombre/Codigo'] = en
                         df.at[idx, 'Vencimiento'] = pd.to_datetime(ev)
@@ -182,7 +198,7 @@ if not df.empty:
                 st.rerun()
 
         st.divider()
-        st.subheader("🔔 Prueba de Alertas")
-        if st.button("📣 Enviar Notificación de Prueba"):
+        st.subheader("🔔 Centro de Alertas")
+        if st.button("🚀 Enviar Prueba al Celular"):
             enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
             st.success("Enviado.")

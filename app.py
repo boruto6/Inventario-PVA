@@ -57,13 +57,13 @@ def enviar_notificacion_externa(mensaje, canal):
         return True
     except: return False
 
-# --- BARRA LATERAL (Registro Independiente) ---
+# --- BARRA LATERAL ---
 with st.sidebar:
     st.header("⚙️ Registro")
     canal_notif = st.text_input("Canal ntfy:", "mi_inventario_privado_123")
     cat_destino = st.selectbox("Destino del producto:", ["Carnes y Pescados", "Pastelería"])
     
-    with st.expander("➕ NUEVO PRODUCTo", expanded=True):
+    with st.expander("➕ NUEVO PRODUCTO", expanded=True):
         n_nombre = st.text_input("Nombre")
         n_venc = st.date_input("Vencimiento", datetime.now() + timedelta(days=30))
         n_aviso = st.slider("Aviso previo", 1, 30, 7)
@@ -76,7 +76,7 @@ with st.sidebar:
             df_final['Produccion'] = pd.to_datetime(df_final['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
             df_final['Vencimiento'] = pd.to_datetime(df_final['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
             conn.update(spreadsheet=url, worksheet=hoja, data=df_final)
-            st.success("Guardado!")
+            st.success("¡Guardado!")
             st.rerun()
 
 # --- LÓGICA DE RENDERIZADO ---
@@ -100,7 +100,8 @@ def dibujar_seccion(titulo, df_local, nombre_hoja, key_p):
         with t1:
             for idx, r in df_local.sort_values("Indice_Urgencia").iterrows():
                 color = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
-                st.markdown(f'<div class="card-container {color}"><div class="t-blanco">{r["Nombre/Codigo"]}<br><small>Vence: {r["Vencimiento"].strftime("%d/%m/%Y")} | Faltan: {r["Dias_Restantes"]} días</small></div></div>', unsafe_allow_html=True)
+                fecha_v_str = r['Vencimiento'].strftime('%d/%m/%Y') if pd.notnull(r['Vencimiento']) else "---"
+                st.markdown(f'<div class="card-container {color}"><div class="t-blanco">{r["Nombre/Codigo"]}<br><small>Vence: {fecha_v_str} | Faltan: {r["Dias_Restantes"]} días</small></div></div>', unsafe_allow_html=True)
                 
                 _, col_btns = st.columns([2, 1.5])
                 with col_btns:
@@ -115,20 +116,27 @@ def dibujar_seccion(titulo, df_local, nombre_hoja, key_p):
                         st.session_state[f"edit_{key_p}_{idx}"] = True
 
         with t2:
-            busq = st.text_input("Buscar...", key=f"b_{key_p}")
-            st.dataframe(df_local[df_local['Nombre/Codigo'].str.lower().str.contains(busq.lower())], use_container_width=True)
+            busq = st.text_input("Buscar producto...", key=f"b_{key_p}")
+            df_filtro = df_local[df_local['Nombre/Codigo'].str.lower().str.contains(busq.lower())].copy()
+            if not df_filtro.empty:
+                df_filtro['Vencimiento'] = df_filtro['Vencimiento'].dt.strftime('%d/%m/%Y')
+                df_filtro['Produccion'] = df_filtro['Produccion'].dt.strftime('%d/%m/%Y')
+            st.dataframe(df_filtro, use_container_width=True)
 
         with t3:
-            p_sel = st.selectbox("Producto:", df_local['Nombre/Codigo'].tolist(), key=f"s_{key_p}")
-            if st.button("Eliminar Seleccionado", key=f"del_{key_p}"):
-                df_d = df_local[df_local['Nombre/Codigo'] != p_sel]
-                df_d['Produccion'] = df_d['Produccion'].dt.strftime('%d/%m/%Y')
-                df_d['Vencimiento'] = df_d['Vencimiento'].dt.strftime('%d/%m/%Y')
-                conn.update(spreadsheet=url, worksheet=nombre_hoja, data=df_d)
-                st.rerun()
-
-# --- DASHBOARD ---
-st.markdown('<p class="titulo-grande">🍎 Control de Inventario</p>', unsafe_allow_html=True)
-dibujar_seccion("🥩 Carnes y Pescados 🐟", df_carnes, "Hoja 1", "carnes")
-st.write("")
-dibujar_seccion("🍰 Pastelería 🥐", df_paste, "Pasteleria", "paste")
+            st.subheader("🛠️ Gestión de Producto")
+            p_sel = st.selectbox("Seleccione para modificar:", df_local['Nombre/Codigo'].tolist(), key=f"s_{key_p}")
+            
+            if p_sel:
+                producto_data = df_local[df_local['Nombre/Codigo'] == p_sel].iloc[0]
+                idx_g = producto_data.name
+                
+                with st.form(f"form_g_{key_p}"):
+                    gn_g = st.text_input("Nombre", value=producto_data['Nombre/Codigo'])
+                    gv_g = st.date_input("Vencimiento", value=producto_data['Vencimiento'], format="DD/MM/YYYY")
+                    ga_g = st.slider("Días Aviso", 1, 30, int(producto_data['Aviso_Dias']))
+                    
+                    if st.form_submit_button("Actualizar Producto"):
+                        df_local.at[idx_g, 'Nombre/Codigo'] = gn_g
+                        df_local.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_g)
+                        df

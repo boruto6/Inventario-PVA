@@ -17,7 +17,7 @@ st.markdown("""
         margin-bottom: 20px;
     }
     
-    /* Estilo para el texto dentro del expander de Carnes y Pescados */
+    /* Estilo para el texto dentro de los expanders */
     .stExpander p {
         font-size: 1.5rem !important;
         font-weight: bold !important;
@@ -114,7 +114,7 @@ with st.sidebar:
                     "Vencimiento": n_venc.strftime('%d/%m/%Y'), 
                     "Aviso_Dias": n_aviso
                 }])
-                df_save = pd.concat([df, nueva_fila], ignore_length=True)
+                df_save = pd.concat([df, nueva_fila], ignore_index=True)
                 df_save['Produccion'] = pd.to_datetime(df_save['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
@@ -129,120 +129,120 @@ if not df.empty:
     df['Dias_Restantes'] = df['Vencimiento'].dt.date.apply(lambda x: (x - hoy).days if pd.notnull(x) else 999)
     df['Indice_Urgencia'] = df['Dias_Restantes'] - df['Aviso_Dias']
 
-    with st.expander("🥩 Carnes y Pescados 🐟", expanded=False):
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total", len(df))
-        c2.metric("Vencidos", len(df[df['Dias_Restantes'] < 0]))
-        c3.metric("Urgentes", len(df[df['Indice_Urgencia'] <= 0]))
-
-        st.divider()
-
-        tab_p, tab_b, tab_g = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
-
-        with tab_p:
-            df_p = df.sort_values("Indice_Urgencia")
-            for idx, r in df_p.iterrows():
-                color_class = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
-                fecha_venc_str = r['Vencimiento'].strftime('%d/%m/%Y') if pd.notnull(r['Vencimiento']) else "Sin fecha"
-                
-                st.markdown(f"""
-                    <div class="card-container {color_class}">
-                        <div>
-                            <p class="t-blanco" style="font-size: 1.1rem;">{r['Nombre/Codigo']}</p>
-                            <p class="t-blanco" style="font-size: 0.85rem; opacity: 0.9;">Vence: {fecha_venc_str} | Faltan: {r['Dias_Restantes']} días</p>
-                        </div>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                # CORRECCIÓN AQUÍ: Usamos una sola fila de columnas pequeñas para los botones
-                # Esto evita que Streamlit los apile en vertical en celulares
-                col_spacer, col_btns = st.columns([2, 1.5]) 
-                with col_btns:
-                    # Usamos st.columns con una lista para definir anchos fijos y forzar horizontal
-                    c_v, c_t, c_e = st.columns([1, 1, 1])
-                    with c_v:
-                        if st.button("✅", key=f"v_{idx}"):
-                            df_res = df.drop(idx)
-                            df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
-                            df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
-                            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
-                            st.rerun()
-                    with c_t:
-                        if st.button("🗑️", key=f"t_{idx}"):
-                            df_res = df.drop(idx)
-                            df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
-                            df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
-                            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
-                            st.rerun()
-                    with c_e:
-                        edit_mode = st.button("✏️", key=f"e_{idx}")
-
-                if edit_mode or st.session_state.get(f"open_{idx}", False):
-                    st.session_state[f"open_{idx}"] = True
-                    with st.expander(f"✏️ Editando: {r['Nombre/Codigo']}", expanded=True):
-                        en_val = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"in_n_{idx}")
-                        ev_val = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"in_v_{idx}", format="DD/MM/YYYY")
-                        ea_val = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"in_a_{idx}")
-                        
-                        col_save, col_cancel = st.columns(2)
-                        if col_save.button("Guardar Cambios", key=f"bs_{idx}"):
-                            df.at[idx, 'Nombre/Codigo'] = en_val
-                            df.at[idx, 'Vencimiento'] = pd.to_datetime(ev_val)
-                            df.at[idx, 'Aviso_Dias'] = ea_val
-                            df_s = df.copy()
-                            df_s['Produccion'] = df_s['Produccion'].dt.strftime('%d/%m/%Y')
-                            df_s['Vencimiento'] = df_s['Vencimiento'].dt.strftime('%d/%m/%Y')
-                            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_s)
-                            st.session_state[f"open_{idx}"] = False
-                            st.rerun()
-                        if col_cancel.button("Cerrar", key=f"bc_{idx}"):
-                            st.session_state[f"open_{idx}"] = False
-                            st.rerun()
-
-        with tab_b:
-            busq = st.text_input("Buscar producto...")
-            df_f = df[df['Nombre/Codigo'].str.lower().str.contains(busq.lower())].copy()
-            if not df_f.empty:
-                df_f['Produccion'] = df_f['Produccion'].dt.strftime('%d/%m/%Y')
-                df_f['Vencimiento'] = df_f['Vencimiento'].dt.strftime('%d/%m/%Y')
-            st.dataframe(df_f, use_container_width=True)
-
-        with tab_g:
-            st.subheader("🛠️ Gestión y Notificaciones")
-            p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key="sel_g_main")
-            
-            if p_sel:
-                producto_data = df[df['Nombre/Codigo'] == p_sel].iloc[0]
-                idx_g = producto_data.name
-                
-                with st.form("form_g_v2"):
-                    gn_g = st.text_input("Nombre", value=producto_data['Nombre/Codigo'])
-                    gv_g = st.date_input("Vencimiento", value=producto_data['Vencimiento'], format="DD/MM/YYYY")
-                    ga_g = st.slider("Días Aviso", 1, 30, int(producto_data['Aviso_Dias']))
-                    
-                    if st.form_submit_button("Actualizar Producto"):
-                        df.at[idx_g, 'Nombre/Codigo'] = gn_g
-                        df.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_g)
-                        df.at[idx_g, 'Aviso_Dias'] = ga_g
-                        df_up = df.copy()
-                        df_up['Produccion'] = df_up['Produccion'].dt.strftime('%d/%m/%Y')
-                        df_up['Vencimiento'] = df_up['Vencimiento'].dt.strftime('%d/%m/%Y')
-                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_up)
-                        st.success("¡Actualizado con éxito!")
-                        st.rerun()
-                
-                if st.button("🗑️ Eliminar Definitivamente", type="primary", key="del_g_final"):
-                    df_d = df.drop(idx_g)
-                    df_d['Produccion'] = df_d['Produccion'].dt.strftime('%d/%m/%Y')
-                    df_d['Vencimiento'] = df_d['Vencimiento'].dt.strftime('%d/%m/%Y')
-                    conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_d)
-                    st.rerun()
+    # --- FUNCIÓN PARA RENDERIZAR CATEGORÍAS (Para no repetir código) ---
+    def renderizar_categoria(titulo, key_suffix):
+        with st.expander(titulo, expanded=False):
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total", len(df))
+            c2.metric("Vencidos", len(df[df['Dias_Restantes'] < 0]))
+            c3.metric("Urgentes", len(df[df['Indice_Urgencia'] <= 0]))
 
             st.divider()
-            st.subheader("🔔 Centro de Alertas")
-            if st.button("🚀 Enviar Prueba al Celular", key="test_notif_g"):
-                enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
-                st.success("Enviado.")
+
+            tab_p, tab_b, tab_g = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
+
+            with tab_p:
+                df_p = df.sort_values("Indice_Urgencia")
+                for idx, r in df_p.iterrows():
+                    color_class = "bg-rojo" if r['Dias_Restantes'] < 0 else ("bg-naranja" if r['Indice_Urgencia'] <= 0 else "bg-verde")
+                    fecha_venc_str = r['Vencimiento'].strftime('%d/%m/%Y') if pd.notnull(r['Vencimiento']) else "Sin fecha"
+                    
+                    st.markdown(f"""
+                        <div class="card-container {color_class}">
+                            <div>
+                                <p class="t-blanco" style="font-size: 1.1rem;">{r['Nombre/Codigo']}</p>
+                                <p class="t-blanco" style="font-size: 0.85rem; opacity: 0.9;">Vence: {fecha_venc_str} | Faltan: {r['Dias_Restantes']} días</p>
+                            </div>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    col_spacer, col_btns = st.columns([2, 1.5]) 
+                    with col_btns:
+                        c_v, c_t, c_e = st.columns([1, 1, 1])
+                        with c_v:
+                            if st.button("✅", key=f"v_{idx}_{key_suffix}"):
+                                df_res = df.drop(idx)
+                                df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
+                                df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
+                                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
+                                st.rerun()
+                        with c_t:
+                            if st.button("🗑️", key=f"t_{idx}_{key_suffix}"):
+                                df_res = df.drop(idx)
+                                df_res['Produccion'] = df_res['Produccion'].dt.strftime('%d/%m/%Y')
+                                df_res['Vencimiento'] = df_res['Vencimiento'].dt.strftime('%d/%m/%Y')
+                                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_res)
+                                st.rerun()
+                        with c_e:
+                            edit_mode = st.button("✏️", key=f"e_{idx}_{key_suffix}")
+
+                    if edit_mode or st.session_state.get(f"open_{idx}_{key_suffix}", False):
+                        st.session_state[f"open_{idx}_{key_suffix}"] = True
+                        with st.expander(f"✏️ Editando: {r['Nombre/Codigo']}", expanded=True):
+                            en_val = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"in_n_{idx}_{key_suffix}")
+                            ev_val = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"in_v_{idx}_{key_suffix}", format="DD/MM/YYYY")
+                            ea_val = st.slider("Aviso", 1, 30, int(r['Aviso_Dias']), key=f"in_a_{idx}_{key_suffix}")
+                            
+                            col_save, col_cancel = st.columns(2)
+                            if col_save.button("Guardar Cambios", key=f"bs_{idx}_{key_suffix}"):
+                                df.at[idx, 'Nombre/Codigo'] = en_val
+                                df.at[idx, 'Vencimiento'] = pd.to_datetime(ev_val)
+                                df.at[idx, 'Aviso_Dias'] = ea_val
+                                df_s = df.copy()
+                                df_s['Produccion'] = df_s['Produccion'].dt.strftime('%d/%m/%Y')
+                                df_s['Vencimiento'] = df_s['Vencimiento'].dt.strftime('%d/%m/%Y')
+                                conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_s)
+                                st.session_state[f"open_{idx}_{key_suffix}"] = False
+                                st.rerun()
+                            if col_cancel.button("Cerrar", key=f"bc_{idx}_{key_suffix}"):
+                                st.session_state[f"open_{idx}_{key_suffix}"] = False
+                                st.rerun()
+
+            with tab_b:
+                busq = st.text_input("Buscar producto...", key=f"search_{key_suffix}")
+                df_f = df[df['Nombre/Codigo'].str.lower().str.contains(busq.lower())].copy()
+                if not df_f.empty:
+                    df_f['Produccion'] = df_f['Produccion'].dt.strftime('%d/%m/%Y')
+                    df_f['Vencimiento'] = df_f['Vencimiento'].dt.strftime('%d/%m/%Y')
+                st.dataframe(df_f, use_container_width=True)
+
+            with tab_g:
+                st.subheader("🛠️ Gestión y Notificaciones")
+                p_sel = st.selectbox("Seleccione para modificar:", df['Nombre/Codigo'].tolist(), key=f"sel_g_{key_suffix}")
+                
+                if p_sel:
+                    producto_data = df[df['Nombre/Codigo'] == p_sel].iloc[0]
+                    idx_g = producto_data.name
+                    
+                    with st.form(f"form_g_{key_suffix}"):
+                        gn_g = st.text_input("Nombre", value=producto_data['Nombre/Codigo'])
+                        gv_g = st.date_input("Vencimiento", value=producto_data['Vencimiento'], format="DD/MM/YYYY")
+                        ga_g = st.slider("Días Aviso", 1, 30, int(producto_data['Aviso_Dias']))
+                        
+                        if st.form_submit_button("Actualizar Producto"):
+                            df.at[idx_g, 'Nombre/Codigo'] = gn_g
+                            df.at[idx_g, 'Vencimiento'] = pd.to_datetime(gv_g)
+                            df.at[idx_g, 'Aviso_Dias'] = ga_g
+                            df_up = df.copy()
+                            df_up['Produccion'] = df_up['Produccion'].dt.strftime('%d/%m/%Y')
+                            df_up['Vencimiento'] = df_up['Vencimiento'].dt.strftime('%d/%m/%Y')
+                            conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_up)
+                            st.success("¡Actualizado con éxito!")
+                            st.rerun()
+                    
+                    if st.button("🗑️ Eliminar Definitivamente", type="primary", key=f"del_g_{key_suffix}"):
+                        df_d = df.drop(idx_g)
+                        df_d['Produccion'] = df_d['Produccion'].dt.strftime('%d/%m/%Y')
+                        df_d['Vencimiento'] = df_d['Vencimiento'].dt.strftime('%d/%m/%Y')
+                        conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_d)
+                        st.rerun()
+
+    # --- RENDERIZADO DE LAS DOS SECCIONES ---
+    renderizar_categoria("🥩 Carnes y Pescados 🐟", "carnes")
+    
+    st.write("") # Espacio pequeño entre secciones
+    
+    renderizar_categoria("🍰 Pastelería 🥐", "pasteleria")
 
     # --- LÓGICA DE NOTIFICACIÓN AUTOMÁTICA ---
     if "ultima_notif" not in st.session_state:

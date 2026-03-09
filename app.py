@@ -115,6 +115,9 @@ if not df.empty:
     c3.metric("Urgentes", len(df[df['Indice_Urgencia'] <= 0]))
 
     st.divider()
+    
+    # --- AGREGADO: NOMBRE DE CATEGORÍA ---
+    st.subheader("🥩 Carnes y Pescados 🐟")
 
     tab_p, tab_b, tab_g = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
 
@@ -220,11 +223,10 @@ if not df.empty:
             enviar_notificacion_externa("Prueba de sonido activa", canal_notif)
             st.success("Enviado.")
 
-    # --- LÓGICA DE NOTIFICACIÓN AUTOMÁTICA (RESTAURADA Y CORREGIDA) ---
+    # --- LÓGICA DE NOTIFICACIÓN AUTOMÁTICA ---
     if "ultima_notif" not in st.session_state:
         st.session_state.ultima_notif = None
 
-    # Detectar si hay productos en amarillo (Indice <= 0) o rojo (Dias < 0)
     urgentes = df[df['Indice_Urgencia'] <= 0]
     
     if len(urgentes) > 0 and st.session_state.ultima_notif != datetime.now().date():

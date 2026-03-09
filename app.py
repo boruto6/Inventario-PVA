@@ -42,31 +42,20 @@ def cargar_datos(nombre_hoja):
         for col in ['Produccion', 'Vencimiento']:
             df_raw[col] = pd.to_datetime(df_raw[col], dayfirst=True, errors='coerce')
         return df_raw
-    except Exception as e:
+    except:
         return pd.DataFrame(columns=["Nombre/Codigo", "Produccion", "Vencimiento", "Aviso_Dias"])
 
 df_carnes = cargar_datos("Hoja 1")
 df_paste = cargar_datos("Pasteleria")
 
-# --- FUNCIÓN DE NOTIFICACIÓN CORREGIDA ---
+# --- FUNCIÓN DE NOTIFICACIÓN ---
 def enviar_notificacion_externa(mensaje, canal):
     if not canal: return False
     try:
-        # Usamos un formato más compatible para ntfy
-        headers = {
-            "Title": "Alerta de Inventario",
-            "Priority": "high",
-            "Tags": "warning,apple"
-        }
-        response = requests.post(
-            f"https://ntfy.sh/{canal}", 
-            data=mensaje.encode('utf-8'), 
-            headers=headers, 
-            timeout=10
-        )
+        headers = {"Title": "Alerta de Inventario", "Priority": "high", "Tags": "warning,apple"}
+        response = requests.post(f"https://ntfy.sh/{canal}", data=mensaje.encode('utf-8'), headers=headers, timeout=10)
         return response.status_code == 200
-    except:
-        return False
+    except: return False
 
 # --- BARRA LATERAL ---
 with st.sidebar:
@@ -110,10 +99,6 @@ def dibujar_seccion(titulo, df_local, nombre_hoja, key_p):
 
         st.divider()
         
-        # Inicializamos el estado de selección si no existe
-        if f"sel_idx_{key_p}" not in st.session_state:
-            st.session_state[f"sel_idx_{key_p}"] = 0
-
         t1, t2, t3 = st.tabs(["🚀 Prioridad", "🔍 Buscador", "🛠️ Gestión"])
         
         with t1:
@@ -133,11 +118,34 @@ def dibujar_seccion(titulo, df_local, nombre_hoja, key_p):
                         conn.update(spreadsheet=url, worksheet=nombre_hoja, data=df_res)
                         st.rerun()
                     
-                    # El lápiz ahora selecciona el producto y te avisa que vayas a Gestión
+                    # El lápiz activa el modo edición para este producto específico
                     if b3.button("✏️", key=f"ed_{key_p}_{idx}"):
-                        lista_nombres = df_local['Nombre/Codigo'].tolist()
-                        st.session_state[f"sel_idx_{key_p}"] = lista_nombres.index(r['Nombre/Codigo'])
-                        st.warning(f"Seleccionado: {r['Nombre/Codigo']}. Ve a la pestaña 'Gestión' para editar.")
+                        st.session_state[f"edit_mode_{key_p}_{idx}"] = True
+
+                # FORMULARIO DE EDICIÓN "IN SITU" (Aparece justo debajo al tocar el lápiz)
+                if st.session_state.get(f"edit_mode_{key_p}_{idx}", False):
+                    with st.container():
+                        st.markdown("---")
+                        st.write(f"**Editando:** {r['Nombre/Codigo']}")
+                        new_n = st.text_input("Nombre", value=r['Nombre/Codigo'], key=f"n_{key_p}_{idx}")
+                        new_v = st.date_input("Vencimiento", value=r['Vencimiento'], key=f"v_{key_p}_{idx}")
+                        new_a = st.slider("Días Aviso", 1, 30, int(r['Aviso_Dias']), key=f"a_{key_p}_{idx}")
+                        
+                        c_save, c_cancel = st.columns(2)
+                        if c_save.button("Guardar Cambios", key=f"save_{key_p}_{idx}"):
+                            df_local.at[idx, 'Nombre/Codigo'] = new_n
+                            df_local.at[idx, 'Vencimiento'] = pd.to_datetime(new_v)
+                            df_local.at[idx, 'Aviso_Dias'] = new_a
+                            df_up = df_local.copy()
+                            df_up['Produccion'] = df_up['Produccion'].dt.strftime('%d/%m/%Y')
+                            df_up['Vencimiento'] = df_up['Vencimiento'].dt.strftime('%d/%m/%Y')
+                            conn.update(spreadsheet=url, worksheet=nombre_hoja, data=df_up)
+                            st.session_state[f"edit_mode_{key_p}_{idx}"] = False
+                            st.rerun()
+                        if c_cancel.button("Cancelar", key=f"can_{key_p}_{idx}"):
+                            st.session_state[f"edit_mode_{key_p}_{idx}"] = False
+                            st.rerun()
+                        st.markdown("---")
 
         with t2:
             busq = st.text_input("Filtrar...", key=f"f_{key_p}")
@@ -148,18 +156,16 @@ def dibujar_seccion(titulo, df_local, nombre_hoja, key_p):
             st.dataframe(df_v, use_container_width=True)
 
         with t3:
-            st.write("### 🛠️ Gestión de Producto")
-            # El selectbox ahora usa el estado guardado por el lápiz
-            lista_nombres = df_local['Nombre/Codigo'].tolist()
-            p_sel = st.selectbox("Elegir producto:", lista_nombres, key=f"sel_{key_p}", index=st.session_state[f"sel_idx_{key_p}"])
+            st.write("### 🛠️ Gestión y Notificaciones")
+            p_sel = st.selectbox("Elegir producto:", df_local['Nombre/Codigo'].tolist(), key=f"sel_{key_p}")
             
             if p_sel:
                 detalles = df_local[df_local['Nombre/Codigo'] == p_sel].iloc[0]
-                with st.form(f"form_{key_p}"):
+                with st.form(f"form_g_{key_p}"):
                     en = st.text_input("Nombre", value=detalles['Nombre/Codigo'])
                     ev = st.date_input("Vencimiento", value=detalles['Vencimiento'])
                     ea = st.slider("Días Aviso", 1, 30, int(detalles['Aviso_Dias']))
-                    if st.form_submit_button("Guardar Cambios"):
+                    if st.form_submit_button("Actualizar Producto"):
                         df_local.at[detalles.name, 'Nombre/Codigo'] = en
                         df_local.at[detalles.name, 'Vencimiento'] = pd.to_datetime(ev)
                         df_local.at[detalles.name, 'Aviso_Dias'] = ea
@@ -167,32 +173,23 @@ def dibujar_seccion(titulo, df_local, nombre_hoja, key_p):
                         df_up['Produccion'] = df_up['Produccion'].dt.strftime('%d/%m/%Y')
                         df_up['Vencimiento'] = df_up['Vencimiento'].dt.strftime('%d/%m/%Y')
                         conn.update(spreadsheet=url, worksheet=nombre_hoja, data=df_up)
-                        st.success("¡Actualizado!")
                         st.rerun()
 
             st.divider()
-            # BOTÓN DE PRUEBA RESTAURADO
-            st.write("### 🔔 Prueba de Alertas")
             if st.button(f"🚀 Probar Notificación ({titulo})", key=f"test_{key_p}"):
-                if enviar_notificacion_externa(f"Prueba exitosa desde la sección {titulo}", canal_notif):
-                    st.success("¡Mensaje enviado al celular!")
+                if enviar_notificacion_externa(f"Prueba exitosa en {titulo}", canal_notif):
+                    st.success("¡Enviado!")
                 else:
-                    st.error("Error al enviar. Revisa el nombre del canal.")
+                    st.error("Error al enviar.")
 
 # Dibujamos secciones
 dibujar_seccion("🥩 Carnes y Pescados 🐟", df_carnes, "Hoja 1", "carnes")
 st.write("")
 dibujar_seccion("🍰 Pastelería 🥐", df_paste, "Pasteleria", "paste")
 
-# --- LÓGICA DE NOTIFICACIONES AUTO ---
-if "ultima_notif" not in st.session_state:
-    st.session_state.ultima_notif = None
-
-urgentes_c = df_carnes[df_carnes['Indice_Urgencia'] <= 0]
-urgentes_p = df_paste[df_paste['Indice_Urgencia'] <= 0]
-total_urgentes = len(urgentes_c) + len(urgentes_p)
-
-if total_urgentes > 0 and st.session_state.ultima_notif != datetime.now().date():
-    msg = f"Atención: Tienes {total_urgentes} productos urgentes o vencidos en tu inventario."
-    if enviar_notificacion_externa(msg, canal_notif):
+# Notificaciones automáticas
+if "ultima_notif" not in st.session_state: st.session_state.ultima_notif = None
+total_urg = len(df_carnes[df_carnes['Indice_Urgencia'] <= 0]) + len(df_paste[df_paste['Indice_Urgencia'] <= 0])
+if total_urg > 0 and st.session_state.ultima_notif != datetime.now().date():
+    if enviar_notificacion_externa(f"Alerta: Tienes {total_urg} productos urgentes.", canal_notif):
         st.session_state.ultima_notif = datetime.now().date()

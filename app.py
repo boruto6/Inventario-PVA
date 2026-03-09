@@ -7,9 +7,22 @@ import requests
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="wide")
 
-# --- CSS MANTENIDO ---
+# --- CSS ACTUALIZADO (Con tamaños de fuente incrementados) ---
 st.markdown("""
     <style>
+    /* Estilo para el título principal */
+    .titulo-grande {
+        font-size: 3rem !important;
+        font-weight: bold;
+        margin-bottom: 20px;
+    }
+    
+    /* Estilo para el texto dentro del expander de Carnes y Pescados */
+    .stExpander p {
+        font-size: 1.5rem !important;
+        font-weight: bold !important;
+    }
+
     .card-container {
         display: flex;
         justify-content: space-between;
@@ -102,7 +115,8 @@ with st.sidebar:
                 st.rerun()
 
 # --- PANEL PRINCIPAL ---
-st.title("🍎 Control de Inventario")
+# Título de Control de Inventario agrandado con clase CSS
+st.markdown('<p class="titulo-grande">🍎 Control de Inventario</p>', unsafe_allow_html=True)
 
 if not df.empty:
     hoy = datetime.now().date()
@@ -110,6 +124,7 @@ if not df.empty:
     df['Indice_Urgencia'] = df['Dias_Restantes'] - df['Aviso_Dias']
 
     # --- SISTEMA PUSH (EXPANDER) ---
+    # El título del expander ahora hereda el tamaño de fuente configurado en CSS
     with st.expander("🥩 Carnes y Pescados 🐟", expanded=False):
         c1, c2, c3 = st.columns(3)
         c1.metric("Total", len(df))

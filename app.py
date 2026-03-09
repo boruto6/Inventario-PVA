@@ -7,7 +7,7 @@ import requests
 # 1. CONFIGURACIÓN
 st.set_page_config(page_title="Inventario Pro", page_icon="🍎", layout="wide")
 
-# --- CSS ACTUALIZADO (Con tamaños de fuente incrementados) ---
+# --- CSS ACTUALIZADO ---
 st.markdown("""
     <style>
     /* Estilo para el título principal */
@@ -37,6 +37,7 @@ st.markdown("""
     .bg-naranja { background-color: #f57c00; }
     .bg-verde { background-color: #388e3c; }
     
+    /* Ajuste para botones en horizontal siempre */
     .stButton > button {
         background-color: rgba(255,255,255,0.2) !important;
         color: white !important;
@@ -44,7 +45,13 @@ st.markdown("""
         border-radius: 5px !important;
         padding: 2px 8px !important;
         height: 35px !important;
-        min-width: 40px !important;
+        min-width: 45px !important;
+        width: 100% !important;
+    }
+
+    /* Forzar que las columnas de botones no se apilen en móvil */
+    [data-testid="column"] {
+        min-width: 0px !important;
     }
     
     [data-testid="stSidebar"] .stButton > button {
@@ -107,7 +114,7 @@ with st.sidebar:
                     "Vencimiento": n_venc.strftime('%d/%m/%Y'), 
                     "Aviso_Dias": n_aviso
                 }])
-                df_save = pd.concat([df, nueva_fila], ignore_index=True)
+                df_save = pd.concat([df, nueva_fila], ignore_length=True)
                 df_save['Produccion'] = pd.to_datetime(df_save['Produccion'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 df_save['Vencimiento'] = pd.to_datetime(df_save['Vencimiento'], dayfirst=True).dt.strftime('%d/%m/%Y')
                 conn.update(spreadsheet=url, worksheet="Hoja 1", data=df_save)
@@ -115,7 +122,6 @@ with st.sidebar:
                 st.rerun()
 
 # --- PANEL PRINCIPAL ---
-# Título de Control de Inventario agrandado con clase CSS
 st.markdown('<p class="titulo-grande">🍎 Control de Inventario</p>', unsafe_allow_html=True)
 
 if not df.empty:
@@ -123,8 +129,6 @@ if not df.empty:
     df['Dias_Restantes'] = df['Vencimiento'].dt.date.apply(lambda x: (x - hoy).days if pd.notnull(x) else 999)
     df['Indice_Urgencia'] = df['Dias_Restantes'] - df['Aviso_Dias']
 
-    # --- SISTEMA PUSH (EXPANDER) ---
-    # El título del expander ahora hereda el tamaño de fuente configurado en CSS
     with st.expander("🥩 Carnes y Pescados 🐟", expanded=False):
         c1, c2, c3 = st.columns(3)
         c1.metric("Total", len(df))
@@ -150,9 +154,12 @@ if not df.empty:
                     </div>
                 """, unsafe_allow_html=True)
                 
-                col_spacer, col_btns = st.columns([3, 1])
+                # CORRECCIÓN AQUÍ: Usamos una sola fila de columnas pequeñas para los botones
+                # Esto evita que Streamlit los apile en vertical en celulares
+                col_spacer, col_btns = st.columns([2, 1.5]) 
                 with col_btns:
-                    c_v, c_t, c_e = st.columns(3)
+                    # Usamos st.columns con una lista para definir anchos fijos y forzar horizontal
+                    c_v, c_t, c_e = st.columns([1, 1, 1])
                     with c_v:
                         if st.button("✅", key=f"v_{idx}"):
                             df_res = df.drop(idx)
